@@ -27,7 +27,7 @@ cdata = configuration_data()
 have_openssl = false
 openssl_dep = dependency('openssl', required: false)
 if openssl_dep.found()
-  if cc.has_header_symbol('openssl/ssl.h', 'SSL_is_quic', dependencies: [openssl_dep])
+  if openssl_dep.type_name() == 'internal' or cc.has_header_symbol('openssl/ssl.h', 'SSL_is_quic', dependencies: [openssl_dep])
     have_openssl = true
   else
     warning('Disabling crypto support due to lack of QUIC support in OpenSSL')
