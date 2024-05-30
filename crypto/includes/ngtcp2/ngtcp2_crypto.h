@@ -822,7 +822,7 @@ typedef ngtcp2_conn *(*ngtcp2_crypto_get_conn)(
  * :type:`ngtcp2_conn`.  It is meant to be set to TLS native handle as
  * an application specific data (e.g. SSL_set_app_data in quictls).
  */
-typedef struct ngtcp2_crypto_conn_ref {
+struct ngtcp2_crypto_conn_ref {
   /**
    * :member:`get_conn` is a callback function to get a pointer to
    * :type:`ngtcp2_conn` object.
@@ -832,7 +832,7 @@ typedef struct ngtcp2_crypto_conn_ref {
    * :member:`user_data` is a pointer to arbitrary user data.
    */
   void *user_data;
-} ngtcp2_crypto_conn_ref;
+};
 
 #ifdef __cplusplus
 }
