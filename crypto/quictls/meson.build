@@ -15,6 +15,7 @@ libngtcp2_crypto_quictls_dep = declare_dependency(
 
 pkg = import('pkgconfig')
 pkg.generate(libngtcp2_crypto_quictls,
+  filebase: 'libngtcp2_crypto_quictls',
   description: 'ngtcp2 quictls crypto library',
   url: 'https://github.com/ngtcp2/ngtcp2',
 )
