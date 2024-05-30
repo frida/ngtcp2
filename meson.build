@@ -22,6 +22,10 @@ endif
 
 cc = meson.get_compiler('c')
 
+if meson.is_subproject() and cc.get_argument_syntax() != 'msvc'
+  add_project_arguments('-w', language: 'c')
+endif
+
 cdata = configuration_data()
 
 have_openssl = false
