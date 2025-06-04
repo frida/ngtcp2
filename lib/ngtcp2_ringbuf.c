@@ -31,17 +31,6 @@
 
 #include "ngtcp2_macro.h"
 
-#if defined(_MSC_VER) && !defined(__clang__) &&                                \
-    (defined(_M_ARM) || defined(_M_ARM64))
-static unsigned int __popcnt(unsigned int x) {
-  unsigned int c = 0;
-  for (; x; ++c) {
-    x &= x - 1;
-  }
-  return c;
-}
-#endif
-
 int ngtcp2_ringbuf_init(ngtcp2_ringbuf *rb, size_t nmemb, size_t size,
                         const ngtcp2_mem *mem) {
   uint8_t *buf = ngtcp2_mem_malloc(mem, nmemb * size);
