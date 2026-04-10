@@ -3,7 +3,7 @@ sources = shared_crypto_sources + 'quictls.c'
 libngtcp2_crypto_quictls = library('ngtcp2_crypto_quictls', sources,
   version: library_version,
   include_directories: [internal_incdirs, public_incdirs],
-  dependencies: [openssl_dep],
+  dependencies: [openssl_dep, libngtcp2_dep],
   install: true,
 )
 
