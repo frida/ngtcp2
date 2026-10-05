@@ -27,7 +27,7 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
 
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
@@ -38,18 +38,18 @@ using namespace ngtcp2;
 
 class TLSServerContext {
 public:
-  TLSServerContext();
+  TLSServerContext() = default;
   ~TLSServerContext();
 
-  int init(const char *private_key_file, const char *cert_file,
-           AppProtocol app_proto);
+  std::expected<void, Error> init(const char *private_key_file,
+                                  const char *cert_file, AppProtocol app_proto);
 
   WOLFSSL_CTX *get_native_handle() const;
 
   void enable_keylog();
 
 private:
-  WOLFSSL_CTX *ssl_ctx_;
+  WOLFSSL_CTX *ssl_ctx_{};
 };
 
-#endif // TLS_SERVER_CONTEXT_WOLFSSL_H
+#endif // !defined(TLS_SERVER_CONTEXT_WOLFSSL_H)

@@ -21,9 +21,7 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-EXTRA_DIST = CMakeLists.txt
-
-if HAVE_CUNIT
+EXTRA_DIST = CMakeLists.txt munit/COPYING munit/munitxx.h
 
 check_PROGRAMS = main
 
@@ -34,7 +32,7 @@ OBJECTS = \
 	ngtcp2_rob_test.c \
 	ngtcp2_acktr_test.c \
 	ngtcp2_map_test.c \
-	ngtcp2_crypto_test.c \
+	ngtcp2_transport_params_test.c \
 	ngtcp2_rtb_test.c \
 	ngtcp2_idtr_test.c \
 	ngtcp2_conn_test.c \
@@ -48,17 +46,31 @@ OBJECTS = \
 	ngtcp2_pmtud_test.c \
 	ngtcp2_str_test.c \
 	ngtcp2_tstamp_test.c \
-	ngtcp2_conversion_test.c \
 	ngtcp2_cc_test.c \
 	ngtcp2_qlog_test.c \
-	ngtcp2_test_helper.c
+	ngtcp2_wf_test.c \
+	ngtcp2_settings_test.c \
+	ngtcp2_callbacks_test.c \
+	ngtcp2_ppe_test.c \
+	ngtcp2_dcidtr_test.c \
+	ngtcp2_addr_test.c \
+	ngtcp2_pcg_test.c \
+	ngtcp2_ratelim_test.c \
+	ngtcp2_conn_info_test.c \
+	ngtcp2_cid_test.c \
+	ngtcp2_log_test.c \
+	ngtcp2_fmt_test.c \
+	ngtcp2_macro_test.c \
+	ngtcp2_test_helper.c \
+	munit/munit.c
+
 HFILES= \
 	ngtcp2_pkt_test.h \
 	ngtcp2_range_test.h \
 	ngtcp2_rob_test.h \
 	ngtcp2_acktr_test.h \
 	ngtcp2_map_test.h \
-	ngtcp2_crypto_test.h \
+	ngtcp2_transport_params_test.h \
 	ngtcp2_rtb_test.h \
 	ngtcp2_idtr_test.h \
 	ngtcp2_conn_test.h \
@@ -72,10 +84,23 @@ HFILES= \
 	ngtcp2_pmtud_test.h \
 	ngtcp2_str_test.h \
 	ngtcp2_tstamp_test.h \
-	ngtcp2_conversion_test.h \
 	ngtcp2_cc_test.h \
 	ngtcp2_qlog_test.h \
-	ngtcp2_test_helper.h
+	ngtcp2_wf_test.h \
+	ngtcp2_settings_test.h \
+	ngtcp2_callbacks_test.h \
+	ngtcp2_ppe_test.h \
+	ngtcp2_dcidtr_test.h \
+	ngtcp2_addr_test.h \
+	ngtcp2_pcg_test.h \
+	ngtcp2_ratelim_test.h \
+	ngtcp2_conn_info_test.h \
+	ngtcp2_cid_test.h \
+	ngtcp2_log_test.h \
+	ngtcp2_fmt_test.h \
+	ngtcp2_macro_test.h \
+	ngtcp2_test_helper.h \
+	munit/munit.h
 
 main_SOURCES = $(HFILES) $(OBJECTS)
 
@@ -86,17 +111,15 @@ main_LDADD = ${top_builddir}/lib/.libs/*.o
 else
 main_LDADD = ${top_builddir}/lib/.libs/libngtcp2.la
 endif
-main_LDADD += @CUNIT_LIBS@
 main_LDFLAGS = -static
 
 AM_CFLAGS = $(WARNCFLAGS) \
 	-I${top_srcdir}/lib \
 	-I${top_srcdir}/lib/includes \
+	-I${top_srcdir}/tests/munit \
 	-I${top_builddir}/lib/includes \
 	-DBUILDING_NGTCP2 \
-	@CUNIT_CFLAGS@ @DEFS@
+	@DEFS@
 AM_LDFLAGS = -no-install
 
 TESTS = main
-
-endif # HAVE_CUNIT

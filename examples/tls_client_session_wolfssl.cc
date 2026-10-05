@@ -26,7 +26,6 @@
 
 #include <cassert>
 #include <cstring>
-#include <iostream>
 
 #include "tls_client_context_wolfssl.h"
 #include "client_base.h"
@@ -35,33 +34,22 @@
 
 using namespace std::literals;
 
-TLSClientSession::TLSClientSession() {}
-
-TLSClientSession::~TLSClientSession() {}
-
 extern Config config;
 
-namespace {
-int wolfssl_session_ticket_cb(WOLFSSL *ssl, const unsigned char *ticket,
-                              int ticketSz, void *cb_ctx) {
-  std::cerr << "session ticket calback invoked" << std::endl;
-  return 0;
-}
-} // namespace
-
-int TLSClientSession::init(bool &early_data_enabled,
-                           const TLSClientContext &tls_ctx,
-                           const char *remote_addr, ClientBase *client,
-                           uint32_t quic_version, AppProtocol app_proto) {
+std::expected<void, Error>
+TLSClientSession::init(bool &early_data_enabled,
+                       const TLSClientContext &tls_ctx, const char *remote_addr,
+                       ClientBase *client, uint32_t quic_version,
+                       AppProtocol app_proto) {
   early_data_enabled = false;
 
   auto ssl_ctx = tls_ctx.get_native_handle();
 
   ssl_ = wolfSSL_new(ssl_ctx);
   if (!ssl_) {
-    std::cerr << "wolfSSL_new: " << ERR_error_string(ERR_get_error(), nullptr)
-              << std::endl;
-    return -1;
+    std::println(stderr, "wolfSSL_new: {}",
+                 ERR_error_string(ERR_get_error(), nullptr));
+    return std::unexpected{Error::CRYPTO};
   }
 
   wolfSSL_set_app_data(ssl_, client->conn_ref());
@@ -69,16 +57,16 @@ int TLSClientSession::init(bool &early_data_enabled,
 
   switch (app_proto) {
   case AppProtocol::H3:
-    wolfSSL_set_alpn_protos(ssl_, H3_ALPN, str_size(H3_ALPN));
+    wolfSSL_set_alpn_protos(ssl_, H3_ALPN.data(), H3_ALPN.size());
     break;
   case AppProtocol::HQ:
-    wolfSSL_set_alpn_protos(ssl_, HQ_ALPN, str_size(HQ_ALPN));
+    wolfSSL_set_alpn_protos(ssl_, HQ_ALPN.data(), HQ_ALPN.size());
     break;
   }
 
   if (!config.sni.empty()) {
     wolfSSL_UseSNI(ssl_, WOLFSSL_SNI_HOST_NAME, config.sni.data(),
-                   config.sni.length());
+                   static_cast<uint16_t>(config.sni.length()));
   } else if (util::numeric_host(remote_addr)) {
     // If remote host is numeric address, just send "localhost" as SNI
     // for now.
@@ -86,41 +74,43 @@ int TLSClientSession::init(bool &early_data_enabled,
                    sizeof("localhost") - 1);
   } else {
     wolfSSL_UseSNI(ssl_, WOLFSSL_SNI_HOST_NAME, remote_addr,
-                   strlen(remote_addr));
+                   static_cast<uint16_t>(strlen(remote_addr)));
   }
 
-  if (config.session_file) {
+  // Just use QUIC v1
+  wolfSSL_set_quic_transport_version(ssl_, 0x39);
+
+  if (!config.session_file.empty()) {
 #ifdef HAVE_SESSION_TICKET
-    auto f = wolfSSL_BIO_new_file(config.session_file, "r");
+    auto f = wolfSSL_BIO_new_file(config.session_file.c_str(), "r");
     if (f == nullptr) {
-      std::cerr << "Could not open TLS session file " << config.session_file
-                << std::endl;
+      std::println(stderr, "Could not open TLS session file {}",
+                   config.session_file.native());
     } else {
       char *name, *header;
       unsigned char *data;
       const unsigned char *pdata;
       long datalen;
-      unsigned int ret;
       WOLFSSL_SESSION *session;
 
       if (wolfSSL_PEM_read_bio(f, &name, &header, &data, &datalen) != 1) {
-        std::cerr << "Could not read TLS session file " << config.session_file
-                  << std::endl;
+        std::println(stderr, "Could not read TLS session file {}",
+                     config.session_file.native());
       } else {
         if ("WOLFSSL SESSION PARAMETERS"sv != name) {
-          std::cerr << "TLS session file contains unexpected name: " << name
-                    << std::endl;
+          std::println(stderr, "TLS session file contains unexpected name: {}",
+                       name);
         } else {
           pdata = data;
           session = wolfSSL_d2i_SSL_SESSION(nullptr, &pdata, datalen);
           if (session == nullptr) {
-            std::cerr << "Could not parse TLS session from file "
-                      << config.session_file << std::endl;
+            std::println(stderr, "Could not parse TLS session from file {}",
+                         config.session_file.native());
           } else {
-            ret = wolfSSL_set_session(ssl_, session);
+            auto ret = wolfSSL_set_session(ssl_, session);
             if (ret != WOLFSSL_SUCCESS) {
-              std::cerr << "Could not install TLS session from file "
-                        << config.session_file << std::endl;
+              std::println(stderr, "Could not install TLS session from file {}",
+                           config.session_file.native());
             } else {
               if (!config.disable_early_data &&
                   wolfSSL_SESSION_get_max_early_data(session)) {
@@ -139,20 +129,19 @@ int TLSClientSession::init(bool &early_data_enabled,
       wolfSSL_BIO_free(f);
     }
     wolfSSL_UseSessionTicket(ssl_);
-    wolfSSL_set_SessionTicket_cb(ssl_, wolfssl_session_ticket_cb, nullptr);
-#else
-    std::cerr << "TLS session im-/export not enabled in wolfSSL" << std::endl;
-#endif
+#else  // !defined(HAVE_SESSION_TICKET)
+    std::println(stderr, "TLS session im-/export not enabled in wolfSSL");
+#endif // !defined(HAVE_SESSION_TICKET)
   }
 
-  return 0;
+  return {};
 }
 
 bool TLSClientSession::get_early_data_accepted() const {
   // wolfSSL_get_early_data_status works after handshake completes.
 #ifdef WOLFSSL_EARLY_DATA
   return wolfSSL_get_early_data_status(ssl_) == SSL_EARLY_DATA_ACCEPTED;
-#else
+#else  // !defined(WOLFSSL_EARLY_DATA)
   return 0;
-#endif
+#endif // !defined(WOLFSSL_EARLY_DATA)
 }

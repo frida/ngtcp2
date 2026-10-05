@@ -26,10 +26,19 @@
 
 #include <stdio.h>
 
-#include <CUnit/CUnit.h>
-
 #include "ngtcp2_ringbuf.h"
 #include "ngtcp2_test_helper.h"
+
+static const MunitTest tests[] = {
+  munit_void_test(test_ngtcp2_ringbuf_push_front),
+  munit_void_test(test_ngtcp2_ringbuf_pop_front),
+  munit_test_end(),
+};
+
+const MunitSuite ringbuf_suite = {
+  .prefix = "/ringbuf",
+  .tests = tests,
+};
 
 typedef struct {
   int32_t a;
@@ -40,8 +49,10 @@ void test_ngtcp2_ringbuf_push_front(void) {
   ngtcp2_ringbuf rb;
   const ngtcp2_mem *mem = ngtcp2_mem_default();
   size_t i;
+  int rv;
 
-  ngtcp2_ringbuf_init(&rb, 64, sizeof(ints), mem);
+  rv = ngtcp2_ringbuf_init(&rb, 64, sizeof(ints), mem);
+  assert_int(0, ==, rv);
 
   for (i = 0; i < 64; ++i) {
     ints *p = ngtcp2_ringbuf_push_front(&rb);
@@ -49,18 +60,18 @@ void test_ngtcp2_ringbuf_push_front(void) {
     p->b = (i + 1) * 10;
   }
 
-  CU_ASSERT(64 == ngtcp2_ringbuf_len(&rb));
+  assert_size(64, ==, ngtcp2_ringbuf_len(&rb));
 
   for (i = 0; i < 64; ++i) {
     ints *p = ngtcp2_ringbuf_get(&rb, i);
-    CU_ASSERT((int32_t)(64 - i) == p->a);
-    CU_ASSERT((64 - i) * 10 == p->b);
+    assert_int32((int32_t)(64 - i), ==, p->a);
+    assert_uint64((64 - i) * 10, ==, p->b);
   }
 
   ngtcp2_ringbuf_push_front(&rb);
 
-  CU_ASSERT(64 == ngtcp2_ringbuf_len(&rb));
-  CU_ASSERT((int32_t)64 == ((ints *)ngtcp2_ringbuf_get(&rb, 1))->a);
+  assert_size(64, ==, ngtcp2_ringbuf_len(&rb));
+  assert_int32((int32_t)64, ==, ((ints *)ngtcp2_ringbuf_get(&rb, 1))->a);
 
   ngtcp2_ringbuf_free(&rb);
 }
@@ -69,25 +80,27 @@ void test_ngtcp2_ringbuf_pop_front(void) {
   ngtcp2_ringbuf rb;
   const ngtcp2_mem *mem = ngtcp2_mem_default();
   size_t i;
+  int rv;
 
-  ngtcp2_ringbuf_init(&rb, 4, sizeof(ints), mem);
+  rv = ngtcp2_ringbuf_init(&rb, 4, sizeof(ints), mem);
+  assert_int(0, ==, rv);
 
   for (i = 0; i < 5; ++i) {
     ints *p = ngtcp2_ringbuf_push_front(&rb);
     p->a = (int32_t)i;
   }
 
-  CU_ASSERT(4 == ngtcp2_ringbuf_len(&rb));
+  assert_size(4, ==, ngtcp2_ringbuf_len(&rb));
 
   for (i = 4; i >= 1; --i) {
     ints *p = ngtcp2_ringbuf_get(&rb, 0);
 
-    CU_ASSERT((int32_t)i == p->a);
+    assert_int32((int32_t)i, ==, p->a);
 
     ngtcp2_ringbuf_pop_front(&rb);
   }
 
-  CU_ASSERT(0 == ngtcp2_ringbuf_len(&rb));
+  assert_size(0, ==, ngtcp2_ringbuf_len(&rb));
 
   ngtcp2_ringbuf_free(&rb);
 }

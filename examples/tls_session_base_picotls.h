@@ -27,9 +27,10 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
 
 #include <string>
+#include <string_view>
 
 #include <ngtcp2/ngtcp2_crypto_picotls.h>
 
@@ -43,12 +44,17 @@ public:
   ngtcp2_crypto_picotls_ctx *get_native_handle();
 
   std::string get_cipher_name() const;
+  std::string_view get_negotiated_group() const {
+    using namespace std::literals;
+
+    return ""sv;
+  }
   std::string get_selected_alpn() const;
   // TODO make keylog work with picotls
-  void enable_keylog(){};
+  void enable_keylog() {}
 
 protected:
   ngtcp2_crypto_picotls_ctx cptls_;
 };
 
-#endif // TLS_SESSION_BASE_PICOTLS_H
+#endif // !defined(TLS_SESSION_BASE_PICOTLS_H)

@@ -27,7 +27,7 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
 
 #include <gnutls/gnutls.h>
 
@@ -40,8 +40,8 @@ public:
   TLSServerContext();
   ~TLSServerContext();
 
-  int init(const char *private_key_file, const char *cert_file,
-           AppProtocol app_proto);
+  std::expected<void, Error> init(const char *private_key_file,
+                                  const char *cert_file, AppProtocol app_proto);
 
   gnutls_certificate_credentials_t get_certificate_credentials() const;
   const gnutls_datum_t *get_session_ticket_key() const;
@@ -51,9 +51,9 @@ public:
   void enable_keylog() {}
 
 private:
-  gnutls_certificate_credentials_t cred_;
-  gnutls_datum_t session_ticket_key_;
+  gnutls_certificate_credentials_t cred_{};
+  gnutls_datum_t session_ticket_key_{};
   gnutls_anti_replay_t anti_replay_;
 };
 
-#endif // TLS_SERVER_CONTEXT_GNUTLS_H
+#endif // !defined(TLS_SERVER_CONTEXT_GNUTLS_H)

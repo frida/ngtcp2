@@ -27,7 +27,9 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
+
+#include <filesystem>
 
 #include "tls_session_base_quictls.h"
 #include "shared.h"
@@ -39,14 +41,17 @@ class ClientBase;
 
 class TLSClientSession : public TLSSessionBase {
 public:
-  TLSClientSession();
-  ~TLSClientSession();
+  TLSClientSession() = default;
 
-  int init(bool &early_data_enabled, const TLSClientContext &tls_ctx,
-           const char *remote_addr, ClientBase *client, uint32_t quic_version,
-           AppProtocol app_proto);
+  std::expected<void, Error> init(bool &early_data_enabled,
+                                  const TLSClientContext &tls_ctx,
+                                  const char *remote_addr, ClientBase *client,
+                                  uint32_t quic_version, AppProtocol app_proto);
 
   bool get_early_data_accepted() const;
+  bool get_ech_accepted() const;
+  std::expected<void, Error>
+  write_ech_config_list(const std::filesystem::path &path) const;
 };
 
-#endif // TLS_CLIENT_SESSION_BORINGSSL_H
+#endif // !defined(TLS_CLIENT_SESSION_BORINGSSL_H)

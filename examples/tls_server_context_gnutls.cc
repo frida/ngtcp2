@@ -24,8 +24,6 @@
  */
 #include "tls_server_context_gnutls.h"
 
-#include <iostream>
-
 #include "server_base.h"
 #include "template.h"
 
@@ -41,7 +39,7 @@ int anti_replay_db_add_func(void *dbf, time_t exp_time,
 }
 } // namespace
 
-TLSServerContext::TLSServerContext() : cred_{nullptr}, session_ticket_key_{} {
+TLSServerContext::TLSServerContext() {
   gnutls_anti_replay_init(&anti_replay_);
   gnutls_anti_replay_set_add_function(anti_replay_, anti_replay_db_add_func);
   gnutls_anti_replay_set_ptr(anti_replay_, nullptr);
@@ -49,7 +47,10 @@ TLSServerContext::TLSServerContext() : cred_{nullptr}, session_ticket_key_{} {
 
 TLSServerContext::~TLSServerContext() {
   gnutls_anti_replay_deinit(anti_replay_);
-  gnutls_free(session_ticket_key_.data);
+  if (session_ticket_key_.data) {
+    gnutls_memset(session_ticket_key_.data, 0, session_ticket_key_.size);
+    gnutls_free(session_ticket_key_.data);
+  }
   gnutls_certificate_free_credentials(cred_);
 }
 
@@ -66,34 +67,35 @@ gnutls_anti_replay_t TLSServerContext::get_anti_replay() const {
   return anti_replay_;
 }
 
-int TLSServerContext::init(const char *private_key_file, const char *cert_file,
-                           AppProtocol app_proto) {
+std::expected<void, Error> TLSServerContext::init(const char *private_key_file,
+                                                  const char *cert_file,
+                                                  AppProtocol app_proto) {
   if (auto rv = gnutls_certificate_allocate_credentials(&cred_); rv != 0) {
-    std::cerr << "gnutls_certificate_allocate_credentials failed: "
-              << gnutls_strerror(rv) << std::endl;
-    return -1;
+    std::println(stderr, "gnutls_certificate_allocate_credentials failed: {}",
+                 gnutls_strerror(rv));
+    return std::unexpected{Error::CRYPTO};
   }
 
   if (auto rv = gnutls_certificate_set_x509_system_trust(cred_); rv < 0) {
-    std::cerr << "gnutls_certificate_set_x509_system_trust failed: "
-              << gnutls_strerror(rv) << std::endl;
-    return -1;
+    std::println(stderr, "gnutls_certificate_set_x509_system_trust failed: {}",
+                 gnutls_strerror(rv));
+    return std::unexpected{Error::CRYPTO};
   }
 
   if (auto rv = gnutls_certificate_set_x509_key_file(
-          cred_, cert_file, private_key_file, GNUTLS_X509_FMT_PEM);
+        cred_, cert_file, private_key_file, GNUTLS_X509_FMT_PEM);
       rv != 0) {
-    std::cerr << "gnutls_certificate_set_x509_key_file failed: "
-              << gnutls_strerror(rv) << std::endl;
-    return -1;
+    std::println(stderr, "gnutls_certificate_set_x509_key_file failed: {}",
+                 gnutls_strerror(rv));
+    return std::unexpected{Error::CRYPTO};
   }
 
   if (auto rv = gnutls_session_ticket_key_generate(&session_ticket_key_);
       rv != 0) {
-    std::cerr << "gnutls_session_ticket_key_generate failed: "
-              << gnutls_strerror(rv) << std::endl;
-    return -1;
+    std::println(stderr, "gnutls_session_ticket_key_generate failed: {}",
+                 gnutls_strerror(rv));
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return 0;
+  return {};
 }

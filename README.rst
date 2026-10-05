@@ -30,9 +30,11 @@ Requirements
 ------------
 
 The libngtcp2 C library itself does not depend on any external
-libraries.  The example client, and server are written in C++20, and
-should compile with the modern C++ compilers (e.g., clang >= 11.0, or
-gcc >= 11.0).
+libraries.  It requires a C11 compiler to build.  The modern compilers
+such as clang >= 19, gcc >= 15, and MSVC 2022 (1944) are known to
+work.  The example client, and server are written in C++23, and should
+compile with the modern C++ compilers (e.g., clang >= 19, or gcc >=
+15).
 
 The following packages are required to configure the build system:
 
@@ -42,54 +44,71 @@ The following packages are required to configure the build system:
 - autotools-dev
 - libtool
 
-libngtcp2 uses cunit for its unit test frame work:
-
-- cunit >= 2.1
-
 To build sources under the examples directory, libev and nghttp3 are
 required:
 
 - libev
 - `nghttp3 <https://github.com/ngtcp2/nghttp3>`_ for HTTP/3
 
+To enable `TLS Certificate Compression
+<https://datatracker.ietf.org/doc/html/rfc8879>`_ in bsslclient and
+bsslserver (BoringSSL (aws-lc) examples client and server), the
+following library is required:
+
+- libbrotli-dev >= 1.0.9
+
 ngtcp2 crypto helper library, and client and server under examples
 directory require at least one of the following TLS backends:
 
 - `quictls
   <https://github.com/quictls/openssl/tree/OpenSSL_1_1_1w+quic>`_
+  (deprecated)
 - GnuTLS >= 3.7.5
-- BoringSSL (commit 8d71d244c0debac4079beeb02b5802fde59b94bd)
-- Picotls (commit ffb2cda165db04a561c2dfab38e1f6d38c7d1f4b)
+- BoringSSL (commit 22a0079b189c391b95689813a41982ce11876f0a);
+  or aws-lc >= 1.39.0
+- Picotls (commit f07f1c8c68b237f1468bc1f1fe1b68aba3ff23b4)
 - wolfSSL >= 5.5.0
+- LibreSSL >= v3.9.2
+- OpenSSL >= 3.5.0 (experimental)
 
-Build from git
---------------
+Before building from git
+------------------------
+
+When build from git, run the following command to pull submodules:
 
 .. code-block:: shell
 
-   $ git clone --depth 1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl
-   $ cd openssl
-   $ # For Linux
-   $ ./config enable-tls1_3 --prefix=$PWD/build
+   $ git submodule update --init
+
+Build with wolfSSL
+------------------
+
+.. code-block:: shell
+
+   $ git clone --depth 1 -b v5.9.2-stable https://github.com/wolfSSL/wolfssl
+   $ cd wolfssl
+   $ autoreconf -i
+   $ # For wolfSSL < v5.6.6, append --enable-quic.
+   $ ./configure --prefix=$PWD/build \
+       --enable-all --enable-aesni --enable-harden --enable-keylog-export \
+       --disable-ech --enable-mlkem
    $ make -j$(nproc)
-   $ make install_sw
+   $ make install
    $ cd ..
-   $ git clone https://github.com/ngtcp2/nghttp3
+   $ git clone --recursive https://github.com/ngtcp2/nghttp3
    $ cd nghttp3
    $ autoreconf -i
    $ ./configure --prefix=$PWD/build --enable-lib-only
    $ make -j$(nproc) check
    $ make install
    $ cd ..
-   $ git clone https://github.com/ngtcp2/ngtcp2
+   $ git clone --recursive https://github.com/ngtcp2/ngtcp2
    $ cd ngtcp2
    $ autoreconf -i
    $ # For Mac users who have installed libev with MacPorts, append
-   $ # ',-L/opt/local/lib' to LDFLAGS, and also pass
-   $ # CPPFLAGS="-I/opt/local/include" to ./configure.
-   $ # For OpenSSL >= v3.0.0, replace "openssl/build/lib" with
-   $ # "openssl/build/lib64".
-   $ ./configure PKG_CONFIG_PATH=$PWD/../openssl/build/lib/pkgconfig:$PWD/../nghttp3/build/lib/pkgconfig LDFLAGS="-Wl,-rpath,$PWD/../openssl/build/lib"
+   $ # LIBEV_CFLAGS="-I/opt/local/include" LIBEV_LIBS="-L/opt/local/lib -lev"
+   $ ./configure PKG_CONFIG_PATH=$PWD/../wolfssl/build/lib/pkgconfig:$PWD/../nghttp3/build/lib/pkgconfig \
+       --with-wolfssl
    $ make -j$(nproc) check
 
 Build with BoringSSL
@@ -99,18 +118,83 @@ Build with BoringSSL
 
    $ git clone https://boringssl.googlesource.com/boringssl
    $ cd boringssl
-   $ git checkout 8d71d244c0debac4079beeb02b5802fde59b94bd
-   $ mkdir build
-   $ cd build
-   $ cmake ..
-   $ make
+   $ git checkout 22a0079b189c391b95689813a41982ce11876f0a
+   $ cmake -B build -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+   $ make -j$(nproc) -C build
    $ cd ..
-   $ mkdir lib
-   $ cd lib
-   $ ln -s ../build/ssl/libssl.a
-   $ ln -s ../build/crypto/libcrypto.a
-   $ cd ../../ngtcp2
-   $ ./configure --with-boringssl BORINGSSL_LIBS="$PWD/../boringssl/lib/libssl.a $PWD/../boringssl/lib/libcrypto.a" BORINGSSL_CFLAGS="-I$PWD/../boringssl/include" PKG_CONFIG_PATH=$PWD/../nghttp3/build/lib/pkgconfig
+   $ git clone --recursive https://github.com/ngtcp2/nghttp3
+   $ cd nghttp3
+   $ autoreconf -i
+   $ ./configure --prefix=$PWD/build --enable-lib-only
+   $ make -j$(nproc) check
+   $ make install
+   $ cd ..
+   $ git clone --recursive  https://github.com/ngtcp2/ngtcp2
+   $ cd ngtcp2
+   $ autoreconf -i
+   $ # For Mac users who have installed libev with MacPorts, append
+   $ # LIBEV_CFLAGS="-I/opt/local/include" LIBEV_LIBS="-L/opt/local/lib -lev"
+   $ ./configure PKG_CONFIG_PATH=$PWD/../nghttp3/build/lib/pkgconfig \
+       BORINGSSL_LIBS="-L$PWD/../boringssl/build -lssl -lcrypto" \
+       BORINGSSL_CFLAGS="-I$PWD/../boringssl/include" \
+       --with-boringssl
+   $ make -j$(nproc) check
+
+Build with aws-lc
+-----------------
+
+.. code-block:: shell
+
+   $ git clone --depth 1 -b v5.4.0 https://github.com/aws/aws-lc
+   $ cd aws-lc
+   $ cmake -B build -DDISABLE_GO=ON
+   $ make -j$(nproc) -C build
+   $ cd ..
+   $ git clone --recursive https://github.com/ngtcp2/nghttp3
+   $ cd nghttp3
+   $ autoreconf -i
+   $ ./configure --prefix=$PWD/build --enable-lib-only
+   $ make -j$(nproc) check
+   $ make install
+   $ cd ..
+   $ git clone --recursive  https://github.com/ngtcp2/ngtcp2
+   $ cd ngtcp2
+   $ autoreconf -i
+   $ # For Mac users who have installed libev with MacPorts, append
+   $ # LIBEV_CFLAGS="-I/opt/local/include" LIBEV_LIBS="-L/opt/local/lib -lev"
+   $ ./configure PKG_CONFIG_PATH=$PWD/../nghttp3/build/lib/pkgconfig \
+       BORINGSSL_CFLAGS="-I$PWD/../aws-lc/include" \
+       BORINGSSL_LIBS="-L$PWD/../aws-lc/build/ssl -lssl -L$PWD/../aws-lc/build/crypto -lcrypto" \
+       --with-boringssl
+   $ make -j$(nproc) check
+
+Build with libressl
+-----------------
+
+.. code-block:: shell
+
+   $ LIBRESSL_VERSION=v4.3.2
+   $ git clone --depth 1 -b $LIBRESSL_VERSION https://github.com/libressl/portable.git libressl
+   $ cd libressl
+   $ # Workaround autogen.sh failure
+   $ export LIBRESSL_GIT_OPTIONS="-b libressl-$LIBRESSL_VERSION"
+   $ ./autogen.sh
+   $ ./configure --prefix=$PWD/build
+   $ make -j$(nproc) install
+   $ cd ..
+   $ git clone --recursive https://github.com/ngtcp2/nghttp3
+   $ cd nghttp3
+   $ autoreconf -i
+   $ ./configure --prefix=$PWD/build --enable-lib-only
+   $ make -j$(nproc) check
+   $ make install
+   $ cd ..
+   $ git clone --recursive  https://github.com/ngtcp2/ngtcp2
+   $ cd ngtcp2
+   $ autoreconf -i
+   $ # For Mac users who have installed libev with MacPorts, append
+   $ # LIBEV_CFLAGS="-I/opt/homebrew/Cellar/libev/4.33/include" LIBEV_LIBS="-L/opt/homebrew/Cellar/libev/4.33/lib -lev"
+   $ ./configure PKG_CONFIG_PATH=$PWD/../nghttp3/build/lib/pkgconfig:$PWD/../libressl/build/lib/pkgconfig
    $ make -j$(nproc) check
 
 Client/Server
@@ -124,7 +208,7 @@ Client
 
 .. code-block:: shell
 
-   $ examples/qtlsclient [OPTIONS] <HOST> <PORT> [<URI>...]
+   $ examples/wsslclient [OPTIONS] <HOST> <PORT> [<URI>...]
 
 The notable options are:
 
@@ -136,21 +220,21 @@ Server
 
 .. code-block:: shell
 
-   $ examples/qtlsserver [OPTIONS] <ADDR> <PORT> <PRIVATE_KEY_FILE> <CERTIFICATE_FILE>
+   $ examples/wsslserver [OPTIONS] <ADDR> <PORT> <PRIVATE_KEY_FILE> <CERTIFICATE_FILE>
 
 The notable options are:
 
 - ``-V``, ``--validate-addr``: Enforce stateless address validation.
 
-H09qtlsclient/H09qtlsserver
----------------------------
+wsslhqclient/wsslhqserver
+-------------------------
 
-There are h09qtlsclient and h09qtlsserver which speak HTTP/0.9.  They
-are written just for `quic-interop-runner
+There are wsslhqclient and wsslhqserver which speak HQ protocol, which
+is specifically tailored for `quic-interop-runner
 <https://github.com/marten-seemann/quic-interop-runner>`_.  They share
 the basic functionalities with HTTP/3 client and server but have less
-functions (e.g., h09qtlsclient does not have a capability to send
-request body, and h09qtlsserver does not understand numeric request
+functions (e.g., wsslhqclient does not have a capability to send
+request body, and wsslhqserver does not understand numeric request
 path, like /1000).
 
 Resumption and 0-RTT
@@ -158,11 +242,11 @@ Resumption and 0-RTT
 
 In order to resume a session, a session ticket, and a transport
 parameters must be fetched from server.  First, run
-examples/qtlsclient with --session-file, and --tp-file options which
+examples/wsslclient with --session-file, and --tp-file options which
 specify a path to session ticket, and transport parameter files
 respectively to save them locally.
 
-Once these files are available, run examples/qtlsclient with the same
+Once these files are available, run examples/wsslclient with the same
 arguments again.  You will see that session is resumed in your log if
 resumption succeeds.  Resuming session makes server's first Handshake
 packet pretty small because it does not send its certificates.
@@ -178,7 +262,7 @@ established.  Client can send this token in subsequent connection to
 the server.  Server verifies the token and if it succeeds, the address
 validation completes and lifts some restrictions on server which might
 speed up transfer.  In order to save and/or load a token,
-use --token-file option of examples/qtlsclient.  The given file is
+use --token-file option of examples/wsslclient.  The given file is
 overwritten if it already exists when storing a token.
 
 Crypto helper library
@@ -192,31 +276,57 @@ The header file exists under crypto/includes/ngtcp2 directory.
 Each library file is built for a particular TLS backend.  The
 available crypto helper libraries are:
 
-- libngtcp2_crypto_quictls: Use quictls as TLS backend
+- libngtcp2_crypto_quictls: Use quictls as TLS backend (deprecated)
+- libngtcp2_crypto_libressl: Use libressl as TLS backend
 - libngtcp2_crypto_gnutls: Use GnuTLS as TLS backend
-- libngtcp2_crypto_boringssl: Use BoringSSL as TLS backend
+- libngtcp2_crypto_boringssl: Use BoringSSL and aws-lc as TLS backend
 - libngtcp2_crypto_picotls: Use Picotls as TLS backend
 - libngtcp2_crypto_wolfssl: Use wolfSSL as TLS backend
+- libngtcp2_crypto_ossl: Use OpenSSL as TLS backend (experimental)
 
 Because BoringSSL and Picotls are an unversioned product, we only
 tested their particular revision.  See Requirements section above.
 
 We use Picotls with OpenSSL as crypto backend.
 
+libngtcp2_crypto_ossl has some restrictions for its use because
+OpenSSL QUIC TLS API requires us to keep crypto data in tact until it
+says that they are no longer used.  It also requires us to keep
+transport parameter buffer.  This extra book keeping is just done for
+a couple of TLS messages exchanged during handshake and a couple of
+session tickets after handshake.  If you absolutely need to use
+OpenSSL backend, your application must make sure that:
+
+- Keep `ngtcp2_conn` alive until ``SSL`` object is freed by
+  ``SSL_free``; or
+- Call ``SSL_set_app_data(ssl, NULL)`` before calling ``SSL_free``
+
+If you cannot make sure neither of them, it is a good time to migrate
+your application to the other alternative (e.g., wolfSSL, aws-lc).
+
+libngtcp2_crypto_quictls, libngtcp2_crypto_libressl and
+libngtcp2_crypto_ossl cannot be built at the same time.
+
+Although libressl has its own library libngtcp2_crypto_libressl, an
+application should include `ngtcp2/ngtcp2_crypto_quictls.h`.  There is
+no `ngtcp2/ngtcp2_crypto_libressl.h`.
+
 The examples directory contains client and server that are linked to
 those crypto helper libraries and TLS backends.  They are only built
 if their corresponding crypto helper library is built:
 
-- qtlsclient: quictls client
-- qtlsserver: quictls server
+- qtlsclient: quictls(libressl) client
+- qtlsserver: quictls(libressl) server
 - gtlsclient: GnuTLS client
 - gtlsserver: GnuTLS server
-- bsslclient: BoringSSL client
-- bsslserver: BoringSSL server
+- bsslclient: BoringSSL(aws-lc) client
+- bsslserver: BoringSSL(aws-lc) server
 - ptlsclient: Picotls client
 - ptlsserver: Picotls server
 - wsslclient: wolfSSL client
 - wsslserver: wolfSSL server
+- osslclient: OpenSSL client
+- osslserver: OpenSSL server
 
 QUIC protocol extensions
 -------------------------

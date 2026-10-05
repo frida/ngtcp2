@@ -27,9 +27,16 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
-void test_ngtcp2_pv_add_entry(void);
-void test_ngtcp2_pv_validate(void);
+#define MUNIT_ENABLE_ASSERT_ALIASES
 
-#endif /* NGTCP2_PV_TEST_H */
+#include "munit.h"
+
+extern const MunitSuite pv_suite;
+
+munit_void_test_decl(test_ngtcp2_pv_add_entry)
+munit_void_test_decl(test_ngtcp2_pv_validate)
+munit_void_test_decl(test_ngtcp2_pv_cancel_expired_timer)
+
+#endif /* !defined(NGTCP2_PV_TEST_H) */

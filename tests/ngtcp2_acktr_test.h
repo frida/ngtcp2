@@ -27,11 +27,19 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
-void test_ngtcp2_acktr_add(void);
-void test_ngtcp2_acktr_eviction(void);
-void test_ngtcp2_acktr_forget(void);
-void test_ngtcp2_acktr_recv_ack(void);
+#define MUNIT_ENABLE_ASSERT_ALIASES
 
-#endif /* NGTCP2_ACKTR_TEST_H */
+#include "munit.h"
+
+extern const MunitSuite acktr_suite;
+
+munit_void_test_decl(test_ngtcp2_acktr_add)
+munit_void_test_decl(test_ngtcp2_acktr_eviction)
+munit_void_test_decl(test_ngtcp2_acktr_forget)
+munit_void_test_decl(test_ngtcp2_acktr_recv_ack)
+munit_void_test_decl(test_ngtcp2_acktr_create_ack_frame)
+munit_void_test_decl(test_ngtcp2_acktr_free)
+
+#endif /* !defined(NGTCP2_ACKTR_TEST_H) */

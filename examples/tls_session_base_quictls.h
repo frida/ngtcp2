@@ -27,26 +27,28 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
 
 #include <string>
+#include <string_view>
 
 #include <openssl/ssl.h>
 
 class TLSSessionBase {
 public:
-  TLSSessionBase();
+  TLSSessionBase() = default;
   ~TLSSessionBase();
 
   SSL *get_native_handle() const;
 
   std::string get_cipher_name() const;
+  std::string_view get_negotiated_group() const;
   std::string get_selected_alpn() const;
   // Keylog is enabled per SSL_CTX.
   void enable_keylog() {}
 
 protected:
-  SSL *ssl_;
+  SSL *ssl_{};
 };
 
-#endif // TLS_SESSION_BASE_QUICTLS_H
+#endif // !defined(TLS_SESSION_BASE_QUICTLS_H)

@@ -24,7 +24,7 @@
  */
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
 #include <time.h>
 #include <sys/types.h>
@@ -176,10 +176,10 @@ static int numeric_host(const char *hostname) {
 }
 
 static const char priority[] =
-    "NORMAL:-VERS-ALL:+VERS-TLS1.3:-CIPHER-ALL:+AES-128-GCM:+AES-256-GCM:"
-    "+CHACHA20-POLY1305:+AES-128-CCM:-GROUP-ALL:+GROUP-SECP256R1:+GROUP-X25519:"
-    "+GROUP-SECP384R1:"
-    "+GROUP-SECP521R1:%DISABLE_TLS13_COMPAT_MODE";
+  "NORMAL:-VERS-ALL:+VERS-TLS1.3:-CIPHER-ALL:+AES-128-GCM:+AES-256-GCM:"
+  "+CHACHA20-POLY1305:+AES-128-CCM:-GROUP-ALL:+GROUP-SECP256R1:+GROUP-X25519:"
+  "+GROUP-SECP384R1:"
+  "+GROUP-SECP521R1:%DISABLE_TLS13_COMPAT_MODE";
 
 static const gnutls_datum_t alpn = {(uint8_t *)ALPN, sizeof(ALPN) - 1};
 
@@ -194,7 +194,7 @@ static int client_gnutls_init(struct client *c) {
   }
 
   rv = gnutls_init(&c->session, GNUTLS_CLIENT | GNUTLS_ENABLE_EARLY_DATA |
-                                    GNUTLS_NO_END_OF_EARLY_DATA);
+                                  GNUTLS_NO_END_OF_EARLY_DATA);
   if (rv != 0) {
     fprintf(stderr, "gnutls_init: %s\n", gnutls_strerror(rv));
     return -1;
@@ -244,8 +244,8 @@ static void rand_cb(uint8_t *dest, size_t destlen,
 }
 
 static int get_new_connection_id_cb(ngtcp2_conn *conn, ngtcp2_cid *cid,
-                                    uint8_t *token, size_t cidlen,
-                                    void *user_data) {
+                                    ngtcp2_stateless_reset_token *token,
+                                    size_t cidlen, void *user_data) {
   (void)conn;
   (void)user_data;
 
@@ -255,8 +255,7 @@ static int get_new_connection_id_cb(ngtcp2_conn *conn, ngtcp2_cid *cid,
 
   cid->datalen = cidlen;
 
-  if (gnutls_rnd(GNUTLS_RND_RANDOM, token, NGTCP2_STATELESS_RESET_TOKENLEN) !=
-      0) {
+  if (gnutls_rnd(GNUTLS_RND_RANDOM, token->data, sizeof(token->data)) != 0) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -286,13 +285,13 @@ static int extend_max_local_streams_bidi(ngtcp2_conn *conn,
   c->stream.datalen = sizeof(MESSAGE) - 1;
 
   return 0;
-#else  /* !MESSAGE */
+#else  /* !defined(MESSAGE) */
   (void)conn;
   (void)max_streams;
   (void)user_data;
 
   return 0;
-#endif /* !MESSAGE */
+#endif /* !defined(MESSAGE) */
 }
 
 static void log_printf(void *user_data, const char *fmt, ...) {
@@ -312,57 +311,32 @@ static int client_quic_init(struct client *c,
                             const struct sockaddr *local_addr,
                             socklen_t local_addrlen) {
   ngtcp2_path path = {
+    .local =
       {
-          (struct sockaddr *)local_addr,
-          local_addrlen,
+        .addr = (struct sockaddr *)local_addr,
+        .addrlen = local_addrlen,
       },
+    .remote =
       {
-          (struct sockaddr *)remote_addr,
-          remote_addrlen,
+        .addr = (struct sockaddr *)remote_addr,
+        .addrlen = remote_addrlen,
       },
-      NULL,
   };
   ngtcp2_callbacks callbacks = {
-      ngtcp2_crypto_client_initial_cb,
-      NULL, /* recv_client_initial */
-      ngtcp2_crypto_recv_crypto_data_cb,
-      NULL, /* handshake_completed */
-      NULL, /* recv_version_negotiation */
-      ngtcp2_crypto_encrypt_cb,
-      ngtcp2_crypto_decrypt_cb,
-      ngtcp2_crypto_hp_mask_cb,
-      NULL, /* recv_stream_data */
-      NULL, /* acked_stream_data_offset */
-      NULL, /* stream_open */
-      NULL, /* stream_close */
-      NULL, /* recv_stateless_reset */
-      ngtcp2_crypto_recv_retry_cb,
-      extend_max_local_streams_bidi,
-      NULL, /* extend_max_local_streams_uni */
-      rand_cb,
-      get_new_connection_id_cb,
-      NULL, /* remove_connection_id */
-      ngtcp2_crypto_update_key_cb,
-      NULL, /* path_validation */
-      NULL, /* select_preferred_address */
-      NULL, /* stream_reset */
-      NULL, /* extend_max_remote_streams_bidi */
-      NULL, /* extend_max_remote_streams_uni */
-      NULL, /* extend_max_stream_data */
-      NULL, /* dcid_status */
-      NULL, /* handshake_confirmed */
-      NULL, /* recv_new_token */
-      ngtcp2_crypto_delete_crypto_aead_ctx_cb,
-      ngtcp2_crypto_delete_crypto_cipher_ctx_cb,
-      NULL, /* recv_datagram */
-      NULL, /* ack_datagram */
-      NULL, /* lost_datagram */
-      ngtcp2_crypto_get_path_challenge_data_cb,
-      NULL, /* stream_stop_sending */
-      ngtcp2_crypto_version_negotiation_cb,
-      NULL, /* recv_rx_key */
-      NULL, /* recv_tx_key */
-      NULL, /* early_data_rejected */
+    .client_initial = ngtcp2_crypto_client_initial_cb,
+    .recv_crypto_data = ngtcp2_crypto_recv_crypto_data_cb,
+    .encrypt = ngtcp2_crypto_encrypt_cb,
+    .decrypt = ngtcp2_crypto_decrypt_cb,
+    .hp_mask = ngtcp2_crypto_hp_mask_cb,
+    .recv_retry = ngtcp2_crypto_recv_retry_cb,
+    .extend_max_local_streams_bidi = extend_max_local_streams_bidi,
+    .rand = rand_cb,
+    .update_key = ngtcp2_crypto_update_key_cb,
+    .delete_crypto_aead_ctx = ngtcp2_crypto_delete_crypto_aead_ctx_cb,
+    .delete_crypto_cipher_ctx = ngtcp2_crypto_delete_crypto_cipher_ctx_cb,
+    .version_negotiation = ngtcp2_crypto_version_negotiation_cb,
+    .get_new_connection_id2 = get_new_connection_id_cb,
+    .get_path_challenge_data2 = ngtcp2_crypto_get_path_challenge_data2_cb,
   };
   ngtcp2_cid dcid, scid;
   ngtcp2_settings settings;
@@ -393,8 +367,8 @@ static int client_quic_init(struct client *c,
   params.initial_max_data = 1024 * 1024;
 
   rv =
-      ngtcp2_conn_client_new(&c->conn, &dcid, &scid, &path, NGTCP2_PROTO_VER_V1,
-                             &callbacks, &settings, &params, NULL, c);
+    ngtcp2_conn_client_new(&c->conn, &dcid, &scid, &path, NGTCP2_PROTO_VER_V1,
+                           &callbacks, &settings, &params, NULL, c);
   if (rv != 0) {
     fprintf(stderr, "ngtcp2_conn_client_new: %s\n", ngtcp2_strerror(rv));
     return -1;
@@ -408,7 +382,10 @@ static int client_quic_init(struct client *c,
 static int client_read(struct client *c) {
   uint8_t buf[65536];
   struct sockaddr_storage addr;
-  struct iovec iov = {buf, sizeof(buf)};
+  struct iovec iov = {
+    .iov_base = buf,
+    .iov_len = sizeof(buf),
+  };
   struct msghdr msg = {0};
   ssize_t nread;
   ngtcp2_path path;
@@ -444,7 +421,7 @@ static int client_read(struct client *c) {
       if (!c->last_error.error_code) {
         if (rv == NGTCP2_ERR_CRYPTO) {
           ngtcp2_ccerr_set_tls_alert(
-              &c->last_error, ngtcp2_conn_get_tls_alert(c->conn), NULL, 0);
+            &c->last_error, ngtcp2_conn_get_tls_alert2(c->conn), NULL, 0);
         } else {
           ngtcp2_ccerr_set_liberr(&c->last_error, rv, NULL, 0);
         }
@@ -458,7 +435,10 @@ static int client_read(struct client *c) {
 
 static int client_send_packet(struct client *c, const uint8_t *data,
                               size_t datalen) {
-  struct iovec iov = {(uint8_t *)data, datalen};
+  struct iovec iov = {
+    .iov_base = (uint8_t *)data,
+    .iov_len = datalen,
+  };
   struct msghdr msg = {0};
   ssize_t nwrite;
 
@@ -505,7 +485,7 @@ static int client_write_streams(struct client *c) {
   ngtcp2_tstamp ts = timestamp();
   ngtcp2_pkt_info pi;
   ngtcp2_ssize nwrite;
-  uint8_t buf[1280];
+  uint8_t buf[1452];
   ngtcp2_path_storage ps;
   ngtcp2_vec datav;
   size_t datavcnt;
@@ -564,7 +544,7 @@ static int client_write(struct client *c) {
     return -1;
   }
 
-  expiry = ngtcp2_conn_get_expiry(c->conn);
+  expiry = ngtcp2_conn_get_expiry2(c->conn);
   now = timestamp();
 
   t = expiry < now ? 1e-9 : (ev_tstamp)(expiry - now) / NGTCP2_SECONDS;
@@ -591,15 +571,15 @@ static void client_close(struct client *c) {
   ngtcp2_path_storage ps;
   uint8_t buf[1280];
 
-  if (ngtcp2_conn_in_closing_period(c->conn) ||
-      ngtcp2_conn_in_draining_period(c->conn)) {
+  if (ngtcp2_conn_in_closing_period2(c->conn) ||
+      ngtcp2_conn_in_draining_period2(c->conn)) {
     goto fin;
   }
 
   ngtcp2_path_storage_zero(&ps);
 
   nwrite = ngtcp2_conn_write_connection_close(
-      c->conn, &ps.path, &pi, buf, sizeof(buf), &c->last_error, timestamp());
+    c->conn, &ps.path, &pi, buf, sizeof(buf), &c->last_error, timestamp());
   if (nwrite < 0) {
     fprintf(stderr, "ngtcp2_conn_write_connection_close: %s\n",
             ngtcp2_strerror((int)nwrite));
@@ -651,7 +631,7 @@ static int client_init(struct client *c) {
   struct sockaddr_storage remote_addr, local_addr;
   socklen_t remote_addrlen, local_addrlen = sizeof(local_addr);
 
-  memset(c, 0, sizeof(*c));
+  *c = (struct client){0};
 
   ngtcp2_ccerr_default(&c->last_error);
 

@@ -22,7 +22,7 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 SUBDIRS = includes
 
-EXTRA_DIST = CMakeLists.txt
+EXTRA_DIST = CMakeLists.txt config.cmake.in
 
 AM_CFLAGS = $(WARNCFLAGS) $(DEBUGCFLAGS) $(EXTRACFLAG)
 AM_CPPFLAGS = -I$(srcdir)/includes -I$(builddir)/includes -DBUILDING_NGTCP2
@@ -68,12 +68,19 @@ OBJECTS = \
 	ngtcp2_pmtud.c \
 	ngtcp2_version.c \
 	ngtcp2_rst.c \
-	ngtcp2_window_filter.c \
+	ngtcp2_wf.c \
 	ngtcp2_opl.c \
 	ngtcp2_balloc.c \
 	ngtcp2_objalloc.c \
 	ngtcp2_unreachable.c \
-	ngtcp2_conversion.c
+	ngtcp2_transport_params.c \
+	ngtcp2_settings.c \
+	ngtcp2_callbacks.c \
+	ngtcp2_dcidtr.c \
+	ngtcp2_pcg.c \
+	ngtcp2_ratelim.c \
+	ngtcp2_conn_info.c \
+	ngtcp2_fmt.c
 
 HFILES = \
 	ngtcp2_pkt.h \
@@ -109,15 +116,22 @@ HFILES = \
 	ngtcp2_pmtud.h \
 	ngtcp2_macro.h \
 	ngtcp2_rst.h \
-	ngtcp2_window_filter.h \
+	ngtcp2_wf.h \
 	ngtcp2_opl.h \
 	ngtcp2_balloc.h \
 	ngtcp2_objalloc.h \
 	ngtcp2_rcvry.h \
 	ngtcp2_net.h \
 	ngtcp2_unreachable.h \
-	ngtcp2_conversion.h \
+	ngtcp2_transport_params.h \
+	ngtcp2_settings.h \
+	ngtcp2_callbacks.h \
+	ngtcp2_dcidtr.h \
+	ngtcp2_pcg.h \
+	ngtcp2_ratelim.h \
+	ngtcp2_conn_info.h \
 	ngtcp2_conn_stat.h \
+	ngtcp2_fmt.h \
 	ngtcp2_pktns_id.h \
 	ngtcp2_tstamp.h
 

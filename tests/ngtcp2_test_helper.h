@@ -27,23 +27,18 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
 #include <ngtcp2/ngtcp2.h>
 
 #include "ngtcp2_conn.h"
 
 /*
- * strsize macro returns the length of string literal |S|.
- */
-#define strsize(S) (sizeof(S) - 1)
-
-/*
  * NGTCP2_APP_ERRxx is an application error code solely used in test
  * code.
  */
-#define NGTCP2_APP_ERR01 0xff01u
-#define NGTCP2_APP_ERR02 0xff02u
+#define NGTCP2_APP_ERR01 0xFF01U
+#define NGTCP2_APP_ERR02 0xFF02U
 
 /*
  * NGTCP2_FAKE_AEAD_OVERHEAD is AEAD overhead used in unit tests.
@@ -83,63 +78,6 @@ size_t ngtcp2_t_encode_ack_frame(uint8_t *out, uint64_t largest_ack,
                                  uint64_t ack_blklen);
 
 /*
- * write_pkt_flags writes a QUIC packet containing frames pointed by
- * |fr| of length |frlen| in |out| whose capacity is |outlen|.  This
- * function returns the number of bytes written.
- */
-size_t write_pkt_flags(uint8_t *out, size_t outlen, uint8_t flags,
-                       const ngtcp2_cid *dcid, int64_t pkt_num,
-                       ngtcp2_frame *fr, size_t frlen, ngtcp2_crypto_km *ckm);
-
-/*
- * write_pkt is write_pkt_flags with flag = NGTCP2_PKT_FLAG_NONE.
- */
-size_t write_pkt(uint8_t *out, size_t outlen, const ngtcp2_cid *dcid,
-                 int64_t pkt_num, ngtcp2_frame *fr, size_t frlen,
-                 ngtcp2_crypto_km *ckm);
-
-/*
- * write_initial_pkt_flags writes a QUIC Initial packet containing
- * |frlen| frames pointed by |fr| into |out| whose capacity is
- * |outlen|.  This function returns the number of bytes written.
- */
-size_t write_initial_pkt_flags(uint8_t *out, size_t outlen, uint8_t flags,
-                               const ngtcp2_cid *dcid, const ngtcp2_cid *scid,
-                               int64_t pkt_num, uint32_t version,
-                               const uint8_t *token, size_t tokenlen,
-                               ngtcp2_frame *fr, size_t frlen,
-                               ngtcp2_crypto_km *ckm);
-
-/*
- * write_initial_pkt is write_initial_pkt_flags with flag =
- * NGTCP2_PKT_FLAG_NONE.
- */
-size_t write_initial_pkt(uint8_t *out, size_t outlen, const ngtcp2_cid *dcid,
-                         const ngtcp2_cid *scid, int64_t pkt_num,
-                         uint32_t version, const uint8_t *token,
-                         size_t tokenlen, ngtcp2_frame *fr, size_t frlen,
-                         ngtcp2_crypto_km *ckm);
-
-/*
- * write_handshake_pkt writes a QUIC Handshake packet containing
- * |frlen| frames pointed by |fr| into |out| whose capacity is
- * |outlen|.  This function returns the number of bytes written.
- */
-size_t write_handshake_pkt(uint8_t *out, size_t outlen, const ngtcp2_cid *dcid,
-                           const ngtcp2_cid *scid, int64_t pkt_num,
-                           uint32_t version, ngtcp2_frame *fr, size_t frlen,
-                           ngtcp2_crypto_km *ckm);
-
-/*
- * write_0rtt_pkt writes a QUIC 0RTT packet containing |frlen| frames
- * pointed by |fr| into |out| whose capacity is |outlen|.  This
- * function returns the number of bytes written.
- */
-size_t write_0rtt_pkt(uint8_t *out, size_t outlen, const ngtcp2_cid *dcid,
-                      const ngtcp2_cid *scid, int64_t pkt_num, uint32_t version,
-                      ngtcp2_frame *fr, size_t frlen, ngtcp2_crypto_km *ckm);
-
-/*
  * open_stream opens new stream denoted by |stream_id|.
  */
 ngtcp2_strm *open_stream(ngtcp2_conn *conn, int64_t stream_id);
@@ -150,9 +88,60 @@ ngtcp2_strm *open_stream(ngtcp2_conn *conn, int64_t stream_id);
  */
 size_t rtb_entry_length(const ngtcp2_rtb_entry *ent);
 
-void scid_init(ngtcp2_cid *cid);
-void dcid_init(ngtcp2_cid *cid);
-void rcid_init(ngtcp2_cid *cid);
+#define make_scid()                                                            \
+  {                                                                            \
+    .datalen = 18,                                                             \
+    .data = {0xEE, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, \
+             0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xEE},                        \
+  }
+
+#define make_dcid()                                                            \
+  {                                                                            \
+    .datalen = 18,                                                             \
+    .data = {0xFF, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, \
+             0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xFF},                        \
+  }
+
+#define make_rcid()                                                            \
+  {                                                                            \
+    .datalen = 18,                                                             \
+    .data = {0xDD, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, \
+             0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xDD},                        \
+  }
+
+#define make_client_stateless_reset_token()                                    \
+  {                                                                            \
+    .data = {0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, 0xF1, \
+             0xF1, 0xF1, 0xF1, 0xF1, 0xF1},                                    \
+  }
+
+#define raw_stateless_reset_token()                                            \
+  {0x70, 0xC0, 0x70, 0xC0, 0x70, 0xC0, 0x70, 0xC0,                             \
+   0x70, 0xC0, 0x70, 0xC0, 0x70, 0xC0, 0x70, 0xC0}
+
+#define make_stateless_reset_token()                                           \
+  {                                                                            \
+    .data = raw_stateless_reset_token(),                                       \
+  }
+
+#define raw_paddr_stateless_reset_token()                                      \
+  {0x70, 0xC1, 0x70, 0xC1, 0x70, 0xC1, 0x70, 0xC1,                             \
+   0x70, 0xC1, 0x70, 0xC1, 0x70, 0xC1, 0x70, 0xC1}
+
+#define make_ipv4_addr()                                                       \
+  {                                                                            \
+    .s_addr = ngtcp2_htonl(0xFA016EB5),                                        \
+  }
+
+#if defined(NGTCP2_USE_GENERIC_SOCKADDR) && defined(s6_addr)
+#  undef s6_addr
+#endif /* defined(NGTCP2_USE_GENERIC_SOCKADDR) && defined(s6_addr) */
+
+#define make_ipv6_addr()                                                       \
+  {                                                                            \
+    .s6_addr = {0x10, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08,    \
+                0x08, 0x00, 0x20, 0x0C, 0x41, 0x7A},                           \
+  }
 
 /*
  * read_pkt_payloadlen reads long header payload length field from
@@ -199,4 +188,99 @@ ngtcp2_ssize pkt_decode_hd_short_mask(ngtcp2_pkt_hd *dest, const uint8_t *pkt,
 void path_init(ngtcp2_path_storage *path, uint32_t local_addr,
                uint16_t local_port, uint32_t remote_addr, uint16_t remote_port);
 
-#endif /* NGTCP2_TEST_HELPER_H */
+/* ngtcp2_tpe is a testing packet encoder.  It can encode all QUIC
+   packet types for testing. */
+typedef struct ngtcp2_tpe {
+  /* dcid is a Destination Connection ID. */
+  ngtcp2_cid dcid;
+  /* scid is a Source Connection ID. */
+  ngtcp2_cid scid;
+  /* version is a QUIC version. */
+  uint32_t version;
+  /* token is a address validation token. */
+  const uint8_t *token;
+  /* tokenlen is a length of token. */
+  size_t tokenlen;
+  /* flags is a bitwise OR of one or more of NGTCP2_PKT_FLAG_*
+     flags. */
+  uint8_t flags;
+
+  /* Initial packet number space. */
+  struct {
+    /* last_pkt_num is the last packet number in this packet number
+       space. */
+    int64_t last_pkt_num;
+    /* ckm points to keying materials. */
+    ngtcp2_crypto_km *ckm;
+  } initial;
+
+  /* Handshake packet number space. */
+  struct {
+    /* last_pkt_num is the last packet number in this packet number
+       space. */
+    int64_t last_pkt_num;
+    /* ckm points to keying materials. */
+    ngtcp2_crypto_km *ckm;
+  } handshake;
+
+  /* Early data. */
+  struct {
+    /* ckm points to keying materials. */
+    ngtcp2_crypto_km *ckm;
+  } early;
+
+  /* Application data packet number space. */
+  struct {
+    /* last_pkt_num is the last packet number in this packet number
+       space. */
+    int64_t last_pkt_num;
+    /* ckm points to keying materials. */
+    ngtcp2_crypto_km *ckm;
+  } app;
+} ngtcp2_tpe;
+
+/* ngtcp2_tpe_init initializes |tpe| with the given arguments. */
+void ngtcp2_tpe_init(ngtcp2_tpe *tpe, const ngtcp2_cid *dcid,
+                     const ngtcp2_cid *scid, uint32_t version);
+
+/* ngtcp2_tpe_init_conn initializes |tpe| using values from |conn|. */
+void ngtcp2_tpe_init_conn(ngtcp2_tpe *tpe, ngtcp2_conn *conn);
+
+/* ngtcp2_tpe_init_conn_handshake_server initializes |tpe| using
+   values from |conn|, and sets the required values to send Initial
+   packets to this server. */
+void ngtcp2_tpe_init_conn_handshake_server(ngtcp2_tpe *tpe, ngtcp2_conn *conn,
+                                           ngtcp2_crypto_km *ckm);
+
+/* ngtcp2_tpe_write_initial encodes Initial packet which contains
+   |frlen| frames pointed by |fr| to the buffer pointed by |out| of
+   length |outlen|.  It returns the number of bytes written. */
+size_t ngtcp2_tpe_write_initial(ngtcp2_tpe *tpe, uint8_t *out, size_t outlen,
+                                ngtcp2_frame *fr, size_t frlen);
+
+/* ngtcp2_tpe_write_initial_padding behaves like
+   ngtcp2_tpe_write_initial, but it adds padding to fill the whole
+   buffer. */
+size_t ngtcp2_tpe_write_initial_padding(ngtcp2_tpe *tpe, uint8_t *out,
+                                        size_t outlen, ngtcp2_frame *fr,
+                                        size_t frlen);
+
+/* ngtcp2_tpe_write_handshake encodes Handshake packet which contains
+   |frlen| frames pointed by |fr| to the buffer pointed by |out| of
+   length |outlen|.  It returns the number of bytes written. */
+size_t ngtcp2_tpe_write_handshake(ngtcp2_tpe *tpe, uint8_t *out, size_t outlen,
+                                  ngtcp2_frame *fr, size_t frlen);
+
+/* ngtcp2_tpe_write_0rtt encodes 0-RTT packet which contains |frlen|
+   frames pointed by |fr| to the buffer pointed by |out| of length
+   |outlen|.  It returns the number of bytes written. */
+size_t ngtcp2_tpe_write_0rtt(ngtcp2_tpe *tpe, uint8_t *out, size_t outlen,
+                             ngtcp2_frame *fr, size_t frlen);
+
+/* ngtcp2_tpe_write_1rtt encodes 1-RTT packet which contains |frlen|
+   frames pointed by |fr| to the buffer pointed by |out| of length
+   |outlen|.  It returns the number of bytes written. */
+size_t ngtcp2_tpe_write_1rtt(ngtcp2_tpe *tpe, uint8_t *out, size_t outlen,
+                             ngtcp2_frame *fr, size_t frlen);
+
+#endif /* !defined(NGTCP2_TEST_HELPER_H) */

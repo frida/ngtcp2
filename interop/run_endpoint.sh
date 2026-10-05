@@ -9,7 +9,7 @@
 # - CLIENT_PARAMS contains user-supplied command line parameters
 
 case $TESTCASE in
-    versionnegotiation|handshake|transfer|retry|resumption|http3|multiconnect|zerortt|chacha20|keyupdate|ecn|v2)
+    versionnegotiation|handshake|transfer|retry|resumption|http3|multiconnect|zerortt|chacha20|keyupdate|ecn|v2|connectionmigration)
         :
         ;;
     *)
@@ -25,11 +25,11 @@ if [ "$ROLE" == "client" ]; then
     REQS=($REQUESTS)
     SERVER=$(echo ${REQS[0]} | sed -re 's|^https://([^/:]+)(:[0-9]+)?/.*$|\1|')
     if [ "$TESTCASE" == "http3" ]; then
-        CLIENT_BIN="/usr/local/bin/qtlsclient"
+        CLIENT_BIN="/usr/local/bin/wsslclient"
     else
-        CLIENT_BIN="/usr/local/bin/h09qtlsclient"
+        CLIENT_BIN="/usr/local/bin/wsslhqclient"
     fi
-    CLIENT_ARGS="$SERVER 443 --download /downloads -s --no-quic-dump --no-http-dump --exit-on-all-streams-close --qlog-dir $QLOGDIR --cc bbr --initial-rtt 100ms"
+    CLIENT_ARGS="$SERVER 443 --download /downloads -s --no-quic-dump --no-http-dump --exit-on-all-streams-close --qlog-dir $QLOGDIR --cc bbr --initial-rtt 100ms --show-stat"
     if [ "$TESTCASE" == "versionnegotiation" ]; then
         CLIENT_ARGS="$CLIENT_ARGS -v 0xaaaaaaaa"
     else
@@ -69,11 +69,11 @@ if [ "$ROLE" == "client" ]; then
     fi
 elif [ "$ROLE" == "server" ]; then
     if [ "$TESTCASE" == "http3" ]; then
-        SERVER_BIN="/usr/local/bin/qtlsserver"
+        SERVER_BIN="/usr/local/bin/wsslserver"
     else
-        SERVER_BIN="/usr/local/bin/h09qtlsserver"
+        SERVER_BIN="/usr/local/bin/wsslhqserver"
     fi
-    SERVER_ARGS="/certs/priv.key /certs/cert.pem -s -d /www --qlog-dir $QLOGDIR --cc bbr --initial-rtt 100ms"
+    SERVER_ARGS="/certs/priv.key /certs/cert.pem -s -d /www --qlog-dir $QLOGDIR --cc bbr --initial-rtt 100ms --show-stat"
     case "$TESTCASE" in
         "retry")
             SERVER_ARGS="$SERVER_ARGS -V"
@@ -86,6 +86,9 @@ elif [ "$ROLE" == "server" ]; then
             ;;
         "ecn")
             SERVER_ARGS="$SERVER_ARGS --no-pmtud"
+            ;;
+        "connectionmigration")
+            SERVER_ARGS="$SERVER_ARGS --preferred-ipv4-addr=server4:4433 --preferred-ipv6-addr=server6:4433"
             ;;
     esac
 

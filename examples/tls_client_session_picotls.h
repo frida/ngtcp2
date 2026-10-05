@@ -27,7 +27,9 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
+
+#include <filesystem>
 
 #include "tls_session_base_picotls.h"
 #include "shared.h"
@@ -39,14 +41,20 @@ class ClientBase;
 
 class TLSClientSession : public TLSSessionBase {
 public:
-  TLSClientSession();
+  TLSClientSession() = default;
   ~TLSClientSession();
 
-  int init(bool &early_data_enabled, TLSClientContext &tls_ctx,
-           const char *remote_addr, ClientBase *client, uint32_t quic_version,
-           AppProtocol app_proto);
+  std::expected<void, Error> init(bool &early_data_enabled,
+                                  TLSClientContext &tls_ctx,
+                                  const char *remote_addr, ClientBase *client,
+                                  uint32_t quic_version, AppProtocol app_proto);
 
   bool get_early_data_accepted() const;
+  bool get_ech_accepted() const { return false; }
+  std::expected<void, Error>
+  write_ech_config_list(const std::filesystem::path &path) const {
+    return {};
+  }
 };
 
-#endif // TLS_CLIENT_SESSION_PICOTLS_H
+#endif // !defined(TLS_CLIENT_SESSION_PICOTLS_H)

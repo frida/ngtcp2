@@ -27,26 +27,30 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
 
-#if defined(ENABLE_EXAMPLE_QUICTLS) && defined(WITH_EXAMPLE_QUICTLS)
+#ifdef WITH_EXAMPLE_QUICTLS
 #  include "tls_client_session_quictls.h"
-#endif // ENABLE_EXAMPLE_QUICTLS && WITH_EXAMPLE_QUICTLS
+#endif // defined(WITH_EXAMPLE_QUICTLS)
 
-#if defined(ENABLE_EXAMPLE_GNUTLS) && defined(WITH_EXAMPLE_GNUTLS)
+#ifdef WITH_EXAMPLE_GNUTLS
 #  include "tls_client_session_gnutls.h"
-#endif // ENABLE_EXAMPLE_GNUTLS && WITH_EXAMPLE_GNUTLS
+#endif // defined(WITH_EXAMPLE_GNUTLS)
 
-#if defined(ENABLE_EXAMPLE_BORINGSSL) && defined(WITH_EXAMPLE_BORINGSSL)
+#ifdef WITH_EXAMPLE_BORINGSSL
 #  include "tls_client_session_boringssl.h"
-#endif // ENABLE_EXAMPLE_BORINGSSL && WITH_EXAMPLE_BORINGSSL
+#endif // defined(WITH_EXAMPLE_BORINGSSL)
 
-#if defined(ENABLE_EXAMPLE_PICOTLS) && defined(WITH_EXAMPLE_PICOTLS)
+#ifdef WITH_EXAMPLE_PICOTLS
 #  include "tls_client_session_picotls.h"
-#endif // ENABLE_EXAMPLE_PICOTLS && WITH_EXAMPLE_PICOTLS
+#endif // defined(WITH_EXAMPLE_PICOTLS)
 
-#if defined(ENABLE_EXAMPLE_WOLFSSL) && defined(WITH_EXAMPLE_WOLFSSL)
+#ifdef WITH_EXAMPLE_WOLFSSL
 #  include "tls_client_session_wolfssl.h"
-#endif // ENABLE_EXAMPLE_WOLFSSL && WITH_EXAMPLE_WOLFSSL
+#endif // defined(WITH_EXAMPLE_WOLFSSL)
 
-#endif // TLS_CLIENT_SESSION_H
+#ifdef WITH_EXAMPLE_OSSL
+#  include "tls_client_session_ossl.h"
+#endif // defined(WITH_EXAMPLE_OSSL)
+
+#endif // !defined(TLS_CLIENT_SESSION_H)

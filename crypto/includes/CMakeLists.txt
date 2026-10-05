@@ -25,7 +25,7 @@ install(FILES
     ngtcp2/ngtcp2_crypto.h
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ngtcp2")
 
-if(HAVE_OPENSSL)
+if(HAVE_QUICTLS OR HAVE_LIBRESSL)
   install(FILES
       ngtcp2/ngtcp2_crypto_quictls.h
       DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ngtcp2")
@@ -52,5 +52,11 @@ endif()
 if(HAVE_WOLFSSL)
   install(FILES
       ngtcp2/ngtcp2_crypto_wolfssl.h
+      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ngtcp2")
+endif()
+
+if(HAVE_OSSL)
+  install(FILES
+      ngtcp2/ngtcp2_crypto_ossl.h
       DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ngtcp2")
 endif()

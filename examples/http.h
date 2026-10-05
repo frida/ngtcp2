@@ -27,18 +27,18 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
 
-#include <string>
+#include <string_view>
 
 namespace ngtcp2 {
 
 namespace http {
 
-std::string get_reason_phrase(unsigned int status_code);
+std::string_view get_reason_phrase(unsigned int status_code);
 
 } // namespace http
 
 } // namespace ngtcp2
 
-#endif // HTTP_H
+#endif // !defined(HTTP_H)

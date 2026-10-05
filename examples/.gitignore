@@ -1,8 +1,8 @@
 qtlsclient
 qtlsserver
 examplestest
-h09qtlsclient
-h09qtlsserver
+wsslhqclient
+wsslhqserver
 gtlsclient
 gtlsserver
 bsslclient
@@ -12,4 +12,6 @@ ptlsserver
 qtlssimpleclient
 wsslclient
 wsslserver
+osslclient
+osslserver
 gtlssimpleclient

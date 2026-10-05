@@ -29,21 +29,40 @@
 #include <functional>
 #include <utility>
 #include <type_traits>
+#include <span>
 
-// inspired by <http://blog.korfuri.fr/post/go-defer-in-cpp/>, but our
-// template can take functions returning other than void.
-template <typename F, typename... T> struct Defer {
-  Defer(F &&f, T &&...t)
-      : f(std::bind(std::forward<F>(f), std::forward<T>(t)...)) {}
-  Defer(Defer &&o) noexcept : f(std::move(o.f)) {}
+template <std::integral T>
+[[nodiscard]] constexpr auto as_unsigned(T n) noexcept {
+  return static_cast<std::make_unsigned_t<T>>(n);
+}
+
+template <std::unsigned_integral T>
+[[nodiscard]] constexpr auto as_signed(T n) noexcept {
+  return static_cast<std::make_signed_t<T>>(n);
+}
+
+template <typename T, std::size_t N>
+[[nodiscard]] auto as_uint8_span(std::span<T, N> s) noexcept {
+  return std::span<const uint8_t, N == std::dynamic_extent ? std::dynamic_extent
+                                                           : N * sizeof(T)>{
+    reinterpret_cast<const uint8_t *>(s.data()), s.size_bytes()};
+}
+
+template <typename F> struct Defer {
+  explicit Defer(F &&f) noexcept(std::is_nothrow_constructible_v<F, F &&>)
+    : f(std::forward<F>(f)) {}
   ~Defer() { f(); }
 
-  using ResultType = std::invoke_result_t<F, T...>;
-  std::function<ResultType()> f;
+  Defer(Defer &&o) = delete;
+  Defer(const Defer &) = delete;
+  Defer &operator=(const Defer &) = delete;
+  Defer &operator=(Defer &&) = delete;
+
+  F f;
 };
 
-template <typename F, typename... T> Defer<F, T...> defer(F &&f, T &&...t) {
-  return Defer<F, T...>(std::forward<F>(f), std::forward<T>(t)...);
+template <typename F> [[nodiscard]] Defer<std::decay_t<F>> defer(F &&f) {
+  return Defer<std::decay_t<F>>(std::forward<F>(f));
 }
 
 template <typename T, size_t N> constexpr size_t array_size(T (&)[N]) {
@@ -56,16 +75,37 @@ template <typename T, size_t N> constexpr size_t str_size(T (&)[N]) {
 
 // User-defined literals for K, M, and G (powers of 1024)
 
-constexpr unsigned long long operator"" _k(unsigned long long k) {
+constexpr unsigned long long operator""_k(unsigned long long k) {
   return k * 1024;
 }
 
-constexpr unsigned long long operator"" _m(unsigned long long m) {
+constexpr unsigned long long operator""_m(unsigned long long m) {
   return m * 1024 * 1024;
 }
 
-constexpr unsigned long long operator"" _g(unsigned long long g) {
+constexpr unsigned long long operator""_g(unsigned long long g) {
   return g * 1024 * 1024 * 1024;
 }
 
-#endif // TEMPLATE_H
+template <typename T, std::size_t N>
+[[nodiscard]] std::span<uint8_t, N == std::dynamic_extent ? std::dynamic_extent
+                                                          : N * sizeof(T)>
+as_writable_uint8_span(std::span<T, N> s) noexcept {
+  return std::span<uint8_t, N == std::dynamic_extent ? std::dynamic_extent
+                                                     : N * sizeof(T)>{
+    reinterpret_cast<uint8_t *>(s.data()), s.size_bytes()};
+}
+
+template <typename R>
+requires(std::ranges::contiguous_range<R> && std::ranges::sized_range<R> &&
+         std::ranges::borrowed_range<R> &&
+         !std::is_array_v<std::remove_cvref_t<R>> &&
+         sizeof(std::ranges::range_value_t<R>) ==
+           sizeof(std::string_view::value_type))
+[[nodiscard]] std::string_view as_string_view(R &&r) {
+  return std::string_view{
+    reinterpret_cast<std::string_view::const_pointer>(std::ranges::data(r)),
+    std::ranges::size(r)};
+}
+
+#endif // !defined(TEMPLATE_H)

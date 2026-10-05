@@ -24,8 +24,6 @@
  */
 #include "tls_client_context_gnutls.h"
 
-#include <iostream>
-
 #include <ngtcp2/ngtcp2_crypto_gnutls.h>
 
 #include "client_base.h"
@@ -35,8 +33,6 @@
 
 extern Config config;
 
-TLSClientContext::TLSClientContext() : cred_{nullptr} {}
-
 TLSClientContext::~TLSClientContext() {
   gnutls_certificate_free_credentials(cred_);
 }
@@ -45,30 +41,29 @@ gnutls_certificate_credentials_t TLSClientContext::get_native_handle() const {
   return cred_;
 }
 
-int TLSClientContext::init(const char *private_key_file,
-                           const char *cert_file) {
-
+std::expected<void, Error> TLSClientContext::init(const char *private_key_file,
+                                                  const char *cert_file) {
   if (auto rv = gnutls_certificate_allocate_credentials(&cred_); rv != 0) {
-    std::cerr << "gnutls_certificate_allocate_credentials failed: "
-              << gnutls_strerror(rv) << std::endl;
-    return -1;
+    std::println(stderr, "gnutls_certificate_allocate_credentials failed: {}",
+                 gnutls_strerror(rv));
+    return std::unexpected{Error::CRYPTO};
   }
 
   if (auto rv = gnutls_certificate_set_x509_system_trust(cred_); rv < 0) {
-    std::cerr << "gnutls_certificate_set_x509_system_trust failed: "
-              << gnutls_strerror(rv) << std::endl;
-    return -1;
+    std::println(stderr, "gnutls_certificate_set_x509_system_trust failed: {}",
+                 gnutls_strerror(rv));
+    return std::unexpected{Error::CRYPTO};
   }
 
   if (private_key_file != nullptr && cert_file != nullptr) {
     if (auto rv = gnutls_certificate_set_x509_key_file(
-            cred_, cert_file, private_key_file, GNUTLS_X509_FMT_PEM);
+          cred_, cert_file, private_key_file, GNUTLS_X509_FMT_PEM);
         rv != 0) {
-      std::cerr << "gnutls_certificate_set_x509_key_file failed: "
-                << gnutls_strerror(rv) << std::endl;
-      return -1;
+      std::println(stderr, "gnutls_certificate_set_x509_key_file failed: {}",
+                   gnutls_strerror(rv));
+      return std::unexpected{Error::CRYPTO};
     }
   }
 
-  return 0;
+  return {};
 }

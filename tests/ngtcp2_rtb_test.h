@@ -27,12 +27,18 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
-void test_ngtcp2_rtb_add(void);
-void test_ngtcp2_rtb_recv_ack(void);
-void test_ngtcp2_rtb_lost_pkt_ts(void);
-void test_ngtcp2_rtb_remove_expired_lost_pkt(void);
-void test_ngtcp2_rtb_remove_excessive_lost_pkt(void);
+#define MUNIT_ENABLE_ASSERT_ALIASES
 
-#endif /* NGTCP2_RTB_TEST_H */
+#include "munit.h"
+
+extern const MunitSuite rtb_suite;
+
+munit_void_test_decl(test_ngtcp2_rtb_add)
+munit_void_test_decl(test_ngtcp2_rtb_recv_ack)
+munit_void_test_decl(test_ngtcp2_rtb_lost_pkt_ts)
+munit_void_test_decl(test_ngtcp2_rtb_remove_expired_lost_pkt)
+munit_void_test_decl(test_ngtcp2_rtb_remove_excessive_lost_pkt)
+
+#endif /* !defined(NGTCP2_RTB_TEST_H) */

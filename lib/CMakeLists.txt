@@ -60,18 +60,45 @@ set(ngtcp2_SOURCES
   ngtcp2_pmtud.c
   ngtcp2_version.c
   ngtcp2_rst.c
-  ngtcp2_window_filter.c
+  ngtcp2_wf.c
   ngtcp2_opl.c
   ngtcp2_balloc.c
   ngtcp2_objalloc.c
   ngtcp2_unreachable.c
-  ngtcp2_conversion.c
+  ngtcp2_transport_params.c
+  ngtcp2_settings.c
+  ngtcp2_callbacks.c
+  ngtcp2_dcidtr.c
+  ngtcp2_pcg.c
+  ngtcp2_ratelim.c
+  ngtcp2_conn_info.c
+  ngtcp2_fmt.c
 )
 
 set(ngtcp2_INCLUDE_DIRS
-  "${CMAKE_CURRENT_SOURCE_DIR}/includes"
-  "${CMAKE_CURRENT_BINARY_DIR}/includes"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/includes>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/includes>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
+
+set(NGTCP2_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(NGTCP2_VERSION_CONFIG "${NGTCP2_GENERATED_DIR}/${PROJECT_NAME}ConfigVersion.cmake")
+set(NGTCP2_PROJECT_CONFIG "${NGTCP2_GENERATED_DIR}/${PROJECT_NAME}Config.cmake")
+set(NGTCP2_TARGETS_EXPORT_NAME "${PROJECT_NAME}Targets")
+set(NGTCP2_CONFIG_INSTALL_DIR "lib/cmake/${PROJECT_NAME}")
+set(NGTCP2_NAMESPACE "${PROJECT_NAME}::")
+set(NGTCP2_VERSION ${PROJECT_VERSION})
+
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+  "${NGTCP2_VERSION_CONFIG}" VERSION ${NGTCP2_VERSION} COMPATIBILITY SameMajorVersion
+)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/config.cmake.in" "${NGTCP2_PROJECT_CONFIG}" @ONLY)
+
+# Install cmake config files
+install(
+  FILES "${NGTCP2_PROJECT_CONFIG}" "${NGTCP2_VERSION_CONFIG}"
+  DESTINATION "${NGTCP2_CONFIG_INSTALL_DIR}")
 
 # Public shared library
 if(ENABLE_SHARED_LIB)
@@ -85,13 +112,14 @@ if(ENABLE_SHARED_LIB)
   target_include_directories(ngtcp2 PUBLIC ${ngtcp2_INCLUDE_DIRS})
 
   install(TARGETS ngtcp2
+    EXPORT ${NGTCP2_TARGETS_EXPORT_NAME}
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 endif()
 
-if(HAVE_CUNIT OR ENABLE_STATIC_LIB)
-  # Static library (for unittests because of symbol visibility)
+if(ENABLE_STATIC_LIB)
+  # Public static library
   add_library(ngtcp2_static STATIC ${ngtcp2_SOURCES})
   set_target_properties(ngtcp2_static PROPERTIES
     COMPILE_FLAGS "${WARNCFLAGS}"
@@ -101,11 +129,16 @@ if(HAVE_CUNIT OR ENABLE_STATIC_LIB)
   )
   target_compile_definitions(ngtcp2_static PUBLIC "-DNGTCP2_STATICLIB")
   target_include_directories(ngtcp2_static PUBLIC ${ngtcp2_INCLUDE_DIRS})
-  if(ENABLE_STATIC_LIB)
-    install(TARGETS ngtcp2_static
-      DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-  endif()
+
+  install(TARGETS ngtcp2_static
+    EXPORT ${NGTCP2_TARGETS_EXPORT_NAME}
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 endif()
+
+install(
+  EXPORT "${NGTCP2_TARGETS_EXPORT_NAME}"
+  NAMESPACE "${NGTCP2_NAMESPACE}"
+  DESTINATION "${NGTCP2_CONFIG_INSTALL_DIR}")
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libngtcp2.pc"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")

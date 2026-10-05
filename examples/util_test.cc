@@ -25,229 +25,392 @@
 #include "util_test.h"
 
 #include <limits>
-
-#include <CUnit/CUnit.h>
+#include <array>
+#include <iterator>
+#include <expected>
+#include <filesystem>
 
 #include "util.h"
 
+using namespace std::literals;
+
 namespace ngtcp2 {
 
+namespace {
+const MunitTest tests[]{
+  munit_void_test(test_util_format_durationf),
+  munit_void_test(test_util_format_uint),
+  munit_void_test(test_util_format_uint_iec),
+  munit_void_test(test_util_format_duration),
+  munit_void_test(test_util_parse_uint),
+  munit_void_test(test_util_parse_uint_iec),
+  munit_void_test(test_util_parse_duration),
+  munit_void_test(test_util_normalize_path),
+  munit_void_test(test_util_hexdump),
+  munit_void_test(test_util_format_hex),
+  munit_void_test(test_util_decode_hex),
+  munit_void_test(test_util_is_hex_string),
+  munit_void_test(test_util_split_str),
+  munit_void_test(test_util_format_app_error_code),
+  munit_test_end(),
+};
+} // namespace
+
+const MunitSuite util_suite{
+  .prefix = "/util",
+  .tests = tests,
+};
+
 namespace util {
-std::optional<std::string> read_pem(const std::string_view &filename,
-                                    const std::string_view &name,
-                                    const std::string_view &type) {
-  return {};
+std::expected<HPKEPrivateKey, Error>
+read_hpke_private_key_pem(const std::filesystem::path &path) {
+  return std::unexpected{Error::NOT_IMPLEMENTED};
 }
 } // namespace util
 
 namespace util {
-int write_pem(const std::string_view &filename, const std::string_view &name,
-              const std::string_view &type, const uint8_t *data,
-              size_t datalen) {
-  return -1;
+std::expected<std::vector<uint8_t>, Error>
+read_pem(const std::filesystem::path &path, std::string_view name,
+         std::string_view type) {
+  return std::unexpected{Error::NOT_IMPLEMENTED};
+}
+} // namespace util
+
+namespace util {
+std::expected<void, Error> write_pem(const std::filesystem::path &path,
+                                     std::string_view name,
+                                     std::string_view type,
+                                     std::span<const uint8_t> data) {
+  return std::unexpected{Error::NOT_IMPLEMENTED};
+}
+} // namespace util
+
+namespace util {
+std::expected<void, Error> generate_secure_random(std::span<uint8_t> data) {
+  return std::unexpected{Error::NOT_IMPLEMENTED};
 }
 } // namespace util
 
 void test_util_format_durationf() {
-  CU_ASSERT("0ns" == util::format_durationf(0));
-  CU_ASSERT("999ns" == util::format_durationf(999));
-  CU_ASSERT("1.00us" == util::format_durationf(1000));
-  CU_ASSERT("1.00us" == util::format_durationf(1004));
-  CU_ASSERT("1.00us" == util::format_durationf(1005));
-  CU_ASSERT("1.02us" == util::format_durationf(1015));
-  CU_ASSERT("2.00us" == util::format_durationf(1999));
-  CU_ASSERT("1.00ms" == util::format_durationf(999999));
-  CU_ASSERT("3.50ms" == util::format_durationf(3500111));
-  CU_ASSERT("9999.99s" == util::format_durationf(9999990000000llu));
+  assert_eq("0ns", util::format_durationf(0));
+  assert_eq("999ns", util::format_durationf(999));
+  assert_eq("1.00us", util::format_durationf(1000));
+  assert_eq("1.00us", util::format_durationf(1004));
+  assert_eq("1.00us", util::format_durationf(1005));
+  assert_eq("1.02us", util::format_durationf(1015));
+  assert_eq("2.00us", util::format_durationf(1999));
+  assert_eq("1.00ms", util::format_durationf(999999));
+  assert_eq("3.50ms", util::format_durationf(3500111));
+  assert_eq("9999.99s", util::format_durationf(9999990000000ULL));
 }
 
 void test_util_format_uint() {
-  CU_ASSERT("0" == util::format_uint(0));
-  CU_ASSERT("18446744073709551615" ==
-            util::format_uint(18446744073709551615ull));
+  assert_eq("0", util::format_uint(0U));
+  assert_eq("18446744073709551615", util::format_uint(18446744073709551615ULL));
 }
 
 void test_util_format_uint_iec() {
-  CU_ASSERT("0" == util::format_uint_iec(0));
-  CU_ASSERT("1023" == util::format_uint_iec((1 << 10) - 1));
-  CU_ASSERT("1K" == util::format_uint_iec(1 << 10));
-  CU_ASSERT("1M" == util::format_uint_iec(1 << 20));
-  CU_ASSERT("1G" == util::format_uint_iec(1 << 30));
-  CU_ASSERT("18446744073709551615" ==
+  assert_eq("0", util::format_uint_iec(0U));
+  assert_eq("1023", util::format_uint_iec((1U << 10) - 1));
+  assert_eq("1K", util::format_uint_iec(1U << 10));
+  assert_eq("1M", util::format_uint_iec(1U << 20));
+  assert_eq("1G", util::format_uint_iec(1U << 30));
+  assert_eq("18446744073709551615"s,
             util::format_uint_iec(std::numeric_limits<uint64_t>::max()));
-  CU_ASSERT("1025K" == util::format_uint_iec((1 << 20) + (1 << 10)));
+  assert_eq("1025K", util::format_uint_iec((1U << 20) + (1U << 10)));
 }
 
 void test_util_format_duration() {
-  CU_ASSERT("0ns" == util::format_duration(0));
-  CU_ASSERT("999ns" == util::format_duration(999));
-  CU_ASSERT("1us" == util::format_duration(1000));
-  CU_ASSERT("1ms" == util::format_duration(1000000));
-  CU_ASSERT("1s" == util::format_duration(1000000000));
-  CU_ASSERT("1m" == util::format_duration(60000000000ull));
-  CU_ASSERT("1h" == util::format_duration(3600000000000ull));
-  CU_ASSERT("18446744073709551615ns" ==
+  assert_eq("0ns", util::format_duration(0));
+  assert_eq("999ns", util::format_duration(999));
+  assert_eq("1us", util::format_duration(1000));
+  assert_eq("1ms", util::format_duration(1000000));
+  assert_eq("1s", util::format_duration(1000000000));
+  assert_eq("1m", util::format_duration(60000000000ULL));
+  assert_eq("1h", util::format_duration(3600000000000ULL));
+  assert_eq("18446744073709551615ns",
             util::format_duration(std::numeric_limits<uint64_t>::max()));
-  CU_ASSERT("61s" == util::format_duration(61000000000ull));
+  assert_eq("61s", util::format_duration(61000000000ULL));
 }
 
 void test_util_parse_uint() {
-  {
-    auto res = util::parse_uint("0");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(0 == *res);
-  }
-  {
-    auto res = util::parse_uint("1");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(1 == *res);
-  }
-  {
-    auto res = util::parse_uint("18446744073709551615");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(18446744073709551615ull == *res);
-  }
-  {
-    auto res = util::parse_uint("18446744073709551616");
-    CU_ASSERT(!res.has_value());
-  }
-  {
-    auto res = util::parse_uint("a");
-    CU_ASSERT(!res.has_value());
-  }
-  {
-    auto res = util::parse_uint("1a");
-    CU_ASSERT(!res.has_value());
-  }
+  assert_ok_eq(0, util::parse_uint("0"));
+  assert_ok_eq(1, util::parse_uint("1"));
+  assert_ok_eq(18446744073709551615ULL,
+               util::parse_uint("18446744073709551615"));
+  assert_err(Error::INTEGER_OVERFLOW, util::parse_uint("18446744073709551616"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_uint("a"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_uint("1a"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_uint(""));
 }
 
 void test_util_parse_uint_iec() {
-  {
-    auto res = util::parse_uint_iec("0");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(0 == *res);
-  }
-  {
-    auto res = util::parse_uint_iec("1023");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(1023 == *res);
-  }
-  {
-    auto res = util::parse_uint_iec("1K");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(1 << 10 == *res);
-  }
-  {
-    auto res = util::parse_uint_iec("1M");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(1 << 20 == *res);
-  }
-  {
-    auto res = util::parse_uint_iec("1G");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(1 << 30 == *res);
-  }
-  {
-    auto res = util::parse_uint_iec("11G");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT((1ull << 30) * 11 == *res);
-  }
-  {
-    auto res = util::parse_uint_iec("18446744073709551616");
-    CU_ASSERT(!res.has_value());
-  }
-  {
-    auto res = util::parse_uint_iec("1x");
-    CU_ASSERT(!res.has_value());
-  }
-  {
-    auto res = util::parse_uint_iec("1Gx");
-    CU_ASSERT(!res.has_value());
-  }
+  assert_ok_eq(0, util::parse_uint_iec("0"));
+  assert_ok_eq(1023, util::parse_uint_iec("1023"));
+  assert_ok_eq(1 << 10, util::parse_uint_iec("1K"));
+  assert_ok_eq(1 << 20, util::parse_uint_iec("1M"));
+  assert_ok_eq(1 << 30, util::parse_uint_iec("1G"));
+  assert_ok_eq((1ULL << 30) * 11, util::parse_uint_iec("11G"));
+  assert_err(Error::INTEGER_OVERFLOW,
+             util::parse_uint_iec("18446744073709551616"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_uint_iec("1x"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_uint_iec("1Gx"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_uint_iec("G"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_uint_iec(""));
 }
 
 void test_util_parse_duration() {
-  {
-    auto res = util::parse_duration("0");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(0 == *res);
-  }
-  {
-    auto res = util::parse_duration("1");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(NGTCP2_SECONDS == *res);
-  }
-  {
-    auto res = util::parse_duration("0ns");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(0 == *res);
-  }
-  {
-    auto res = util::parse_duration("1ns");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(1 == *res);
-  }
-  {
-    auto res = util::parse_duration("1us");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(NGTCP2_MICROSECONDS == *res);
-  }
-  {
-    auto res = util::parse_duration("1ms");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(NGTCP2_MILLISECONDS == *res);
-  }
-  {
-    auto res = util::parse_duration("1s");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(NGTCP2_SECONDS == *res);
-  }
-  {
-    auto res = util::parse_duration("1m");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(60 * NGTCP2_SECONDS == *res);
-  }
-  {
-    auto res = util::parse_duration("1h");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(3600 * NGTCP2_SECONDS == *res);
-  }
-  {
-    auto res = util::parse_duration("2h");
-    CU_ASSERT(res.has_value());
-    CU_ASSERT(2 * 3600 * NGTCP2_SECONDS == *res);
-  }
-  {
-    auto res = util::parse_duration("18446744073709551616");
-    CU_ASSERT(!res.has_value());
-  }
-  {
-    auto res = util::parse_duration("1x");
-    CU_ASSERT(!res.has_value());
-  }
-  {
-    auto res = util::parse_duration("1mx");
-    CU_ASSERT(!res.has_value());
-  }
-  {
-    auto res = util::parse_duration("1mxy");
-    CU_ASSERT(!res.has_value());
-  }
+  assert_ok_eq(0, util::parse_duration("0"));
+  assert_ok_eq(NGTCP2_SECONDS, util::parse_duration("1"));
+  assert_ok_eq(0, util::parse_duration("0ns"));
+  assert_ok_eq(1, util::parse_duration("1ns"));
+  assert_ok_eq(NGTCP2_MICROSECONDS, util::parse_duration("1us"));
+  assert_ok_eq(NGTCP2_MILLISECONDS, util::parse_duration("1ms"));
+  assert_ok_eq(NGTCP2_SECONDS, util::parse_duration("1s"));
+  assert_ok_eq(60 * NGTCP2_SECONDS, util::parse_duration("1m"));
+  assert_ok_eq(3600 * NGTCP2_SECONDS, util::parse_duration("1h"));
+  assert_ok_eq(2 * 3600 * NGTCP2_SECONDS, util::parse_duration("2h"));
+  assert_err(Error::INTEGER_OVERFLOW,
+             util::parse_duration("18446744073709551616"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_duration("1x"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_duration("1mx"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_duration("1mxy"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_duration("s"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_duration("ms"));
+  assert_err(Error::INVALID_ARGUMENT, util::parse_duration(""));
 }
 
 void test_util_normalize_path() {
-  CU_ASSERT("/" == util::normalize_path("/"));
-  CU_ASSERT("/" == util::normalize_path("//"));
-  CU_ASSERT("/foo" == util::normalize_path("/foo"));
-  CU_ASSERT("/foo/bar/" == util::normalize_path("/foo/bar/"));
-  CU_ASSERT("/foo/bar/" == util::normalize_path("/foo/abc/../bar/"));
-  CU_ASSERT("/foo/bar/" == util::normalize_path("/../foo/abc/../bar/"));
-  CU_ASSERT("/foo/bar/" ==
-            util::normalize_path("/./foo/././abc///.././bar/./"));
-  CU_ASSERT("/foo/" == util::normalize_path("/foo/."));
-  CU_ASSERT("/foo/bar" == util::normalize_path("/foo/./bar"));
-  CU_ASSERT("/bar" == util::normalize_path("/foo/./../bar"));
-  CU_ASSERT("/bar" == util::normalize_path("/../../bar"));
+  assert_ok_eq("/", util::normalize_path("/"));
+  assert_ok_eq("/", util::normalize_path("//"));
+  assert_ok_eq("/foo", util::normalize_path("/foo"));
+  assert_ok_eq("/foo/bar/", util::normalize_path("/foo/bar/"));
+  assert_ok_eq("/foo/bar/", util::normalize_path("/foo/abc/../bar/"));
+  assert_ok_eq("/foo/bar/", util::normalize_path("/../foo/abc/../bar/"));
+  assert_ok_eq("/foo/bar/",
+               util::normalize_path("/./foo/././abc///.././bar/./"));
+  assert_ok_eq("/foo/", util::normalize_path("/foo/."));
+  assert_ok_eq("/foo/bar", util::normalize_path("/foo/./bar"));
+  assert_ok_eq("/bar", util::normalize_path("/foo/./../bar"));
+  assert_ok_eq("/bar", util::normalize_path("/../../bar"));
+  assert_ok_eq("/", util::normalize_path(std::string(1024, '/')));
+  assert_err(Error::INVALID_ARGUMENT,
+             util::normalize_path(std::string(1025, '/')));
+  assert_ok_eq("/", util::normalize_path("/.."));
+  assert_ok_eq("/index.html", util::normalize_path("/../../index.html"));
+}
+
+void test_util_hexdump() {
+  char buf[4096];
+
+  struct hexdump_testdata {
+    const char *title;
+    std::string_view data;
+    std::string_view dump;
+  };
+
+  auto tests = std::to_array<hexdump_testdata>({
+    {
+      .title = "Empty data",
+      .data = ""sv,
+      .dump = ""sv,
+    },
+    {
+      .title = "1 byte",
+      .data = "0"sv,
+      .dump = "00000000  30                                                "
+              "|0|\n"
+              "00000001\n"sv,
+    },
+    {
+      .title = "8 bytes",
+      .data = "01234567"sv,
+      .dump = "00000000  30 31 32 33 34 35 36 37                           "
+              "|01234567|\n"
+              "00000008\n"sv,
+    },
+    {
+      .title = "9 bytes",
+      .data = "012345678"sv,
+      .dump = "00000000  30 31 32 33 34 35 36 37  38                       "
+              "|012345678|\n"
+              "00000009\n"sv,
+    },
+    {
+      .title = "15 bytes",
+      .data = "0123456789abcde"sv,
+      .dump = "00000000  30 31 32 33 34 35 36 37  38 39 61 62 63 64 65     "
+              "|0123456789abcde|\n"
+              "0000000f\n"sv,
+    },
+    {
+      .title = "16 bytes",
+      .data = "0123456789abcdef"sv,
+      .dump = "00000000  30 31 32 33 34 35 36 37  38 39 61 62 63 64 65 66  "
+              "|0123456789abcdef|\n"
+              "00000010\n"sv,
+    },
+    {
+      .title = "17 bytes",
+      .data = "0123456789abcdefg"sv,
+      .dump = "00000000  30 31 32 33 34 35 36 37  38 39 61 62 63 64 65 66  "
+              "|0123456789abcdef|\n"
+              "00000010  67                                                "
+              "|g|\n"
+              "00000011\n"sv,
+    },
+    {
+      .title = "Non-printables",
+      .data = "\0\a\b\t\n\v\f\r\x7F"sv,
+      .dump = "00000000  00 07 08 09 0a 0b 0c 0d  7f                       "
+              "|.........|\n"
+              "00000009\n"sv,
+    },
+    {
+      .title = "Multiple lines",
+      .data = "alpha bravo charlie delta echo foxtrot golf"sv,
+      .dump = "00000000  61 6c 70 68 61 20 62 72  61 76 6f 20 63 68 61 72  "
+              "|alpha bravo char|\n"
+              "00000010  6c 69 65 20 64 65 6c 74  61 20 65 63 68 6f 20 66  "
+              "|lie delta echo f|\n"
+              "00000020  6f 78 74 72 6f 74 20 67  6f 6c 66                 "
+              "|oxtrot golf|\n"
+              "0000002b\n"sv,
+    },
+    {
+      .title = "Repeated lines",
+      .data = "000000000000000100000000000000010000000000000001000000000000"
+              "00020000"
+              "0000000000020000000000000003"sv,
+      .dump = "00000000  30 30 30 30 30 30 30 30  30 30 30 30 30 30 30 31  "
+              "|0000000000000001|\n"
+              "*\n"
+              "00000030  30 30 30 30 30 30 30 30  30 30 30 30 30 30 30 32  "
+              "|0000000000000002|\n"
+              "*\n"
+              "00000050  30 30 30 30 30 30 30 30  30 30 30 30 30 30 30 33  "
+              "|0000000000000003|\n"
+              "00000060\n"sv,
+    },
+    {
+      .title = "Ends with the repeated line",
+      .data = ""
+              "000000000000000100000000000000010000000000000001000000000000"
+              "00020000000000000002"sv,
+      .dump = "00000000  30 30 30 30 30 30 30 30  30 30 30 30 30 30 30 31  "
+              "|0000000000000001|\n"
+              "*\n"
+              "00000030  30 30 30 30 30 30 30 30  30 30 30 30 30 30 30 32  "
+              "|0000000000000002|\n"
+              "*\n"
+              "00000050\n"sv,
+    },
+  });
+
+  for (auto &t : tests) {
+    munit_log(MUNIT_LOG_INFO, t.title);
+
+    auto f = tmpfile();
+
+    assert_ok(util::hexdump(f, std::span{t.data}));
+
+    fseek(f, 0, SEEK_SET);
+    auto nread = fread(buf, 1, sizeof(buf), f);
+    buf[nread] = '\0';
+
+    assert_eq(t.dump, buf);
+
+    fclose(f);
+  }
+}
+
+void test_util_format_hex() {
+  auto a = std::to_array<uint8_t>({0xDE, 0xAD, 0xBE, 0xEF});
+
+  assert_eq("deadbeef", util::format_hex(a));
+  assert_eq("deadbeef", util::format_hex(0xDEADBEEF));
+  assert_eq("beef", util::format_hex(a.data() + 2, 2));
+
+  std::array<char, 64> buf;
+  auto b = std::ranges::begin(buf);
+
+  assert_eq("00",
+            std::string_view(b, util::format_hex(static_cast<uint8_t>(0U), b)));
+  assert_eq("ec", std::string_view(
+                    b, util::format_hex(static_cast<uint8_t>(0xECU), b)));
+  assert_eq("00000000", std::string_view(b, util::format_hex(0U, b)));
+  assert_eq("0000ab01", std::string_view(b, util::format_hex(0xAB01U, b)));
+  assert_eq("deadbeefbaadf00d",
+            std::string_view(b, util::format_hex(0xDEADBEEFBAADF00DU, b)));
+  assert_eq("ffffffffffffffff",
+            std::string_view(
+              b, util::format_hex(std::numeric_limits<uint64_t>::max(), b)));
+
+  std::vector<char> char_vec;
+  util::format_hex(a, std::back_inserter(char_vec));
+
+  assert_eq("deadbeef", as_string_view(char_vec));
+
+  std::vector<uint8_t> uint8_vec;
+  util::format_hex(a, std::back_inserter(uint8_vec));
+
+  assert_eq("deadbeef", as_string_view(uint8_vec));
+}
+
+void test_util_decode_hex() {
+  assert_eq("\xDE\xAD\xBE\xEF", util::decode_hex("deadbeef"sv));
+  assert_eq("", util::decode_hex(""sv));
+}
+
+void test_util_is_hex_string() {
+  assert_true(util::is_hex_string(""sv));
+  assert_true(util::is_hex_string("0123456789abcdef"sv));
+  assert_true(util::is_hex_string("0123456789ABCDEF"sv));
+  assert_false(util::is_hex_string("0123456789ABCDEF9"sv));
+  assert_false(util::is_hex_string("aaa"sv));
+  assert_true(util::is_hex_string("aa"sv));
+  assert_false(util::is_hex_string("a"sv));
+  assert_false(util::is_hex_string("zzz"sv));
+  assert_false(util::is_hex_string("zz"sv));
+  assert_false(util::is_hex_string("z"sv));
+}
+
+void test_util_split_str() {
+  assert_eq((std::vector{
+              "alpha"sv,
+              "bravo"sv,
+              "charlie"sv,
+            }),
+            util::split_str("alpha,bravo,charlie"sv) |
+              std::ranges::to<std::vector>());
+  assert_eq((std::vector{
+              "alpha"sv,
+              "bravo"sv,
+              "charlie"sv,
+            }),
+            util::split_str("alpha bravo charlie"sv, ' ') |
+              std::ranges::to<std::vector>());
+  assert_eq((std::vector<std::string_view>{}),
+            util::split_str(""sv, ' ') | std::ranges::to<std::vector>());
+  assert_eq((std::vector{""sv, ""sv}),
+            util::split_str(","sv) | std::ranges::to<std::vector>());
+  assert_eq((std::vector{
+              ""sv,
+              "alpha"sv,
+              ""sv,
+              ""sv,
+              "bravo"sv,
+              "charlie"sv,
+              ""sv,
+              ""sv,
+            }),
+            util::split_str(" alpha   bravo charlie  "sv, ' ') |
+              std::ranges::to<std::vector>());
+}
+
+void test_util_format_app_error_code() {
+  assert_eq("(no error)", util::format_app_error_code({}));
+  assert_eq("0xfe01", util::format_app_error_code(0xfe01));
 }
 
 } // namespace ngtcp2

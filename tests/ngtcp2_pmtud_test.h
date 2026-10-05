@@ -27,8 +27,14 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
-void test_ngtcp2_pmtud_probe(void);
+#define MUNIT_ENABLE_ASSERT_ALIASES
 
-#endif /* NGTCP2_PMTUD_TEST_H */
+#include "munit.h"
+
+extern const MunitSuite pmtud_suite;
+
+munit_void_test_decl(test_ngtcp2_pmtud_probe)
+
+#endif /* !defined(NGTCP2_PMTUD_TEST_H) */

@@ -27,16 +27,30 @@
 #include <stdio.h>
 #include <assert.h>
 
-#include <CUnit/CUnit.h>
-
 #include "ngtcp2_cc.h"
 #include "ngtcp2_test_helper.h"
 
+static const MunitTest tests[] = {
+  munit_void_test(test_ngtcp2_cbrt),
+  munit_test_end(),
+};
+
+const MunitSuite cc_suite = {
+  .prefix = "/cc",
+  .tests = tests,
+};
+
 void test_ngtcp2_cbrt(void) {
   uint64_t n;
+  uint64_t i;
 
-  CU_ASSERT(3 == ngtcp2_cbrt(9));
+  for (i = 1; i <= 2642245; ++i) {
+    n = i * i * i;
 
-  n = 104031;
-  CU_ASSERT(n == ngtcp2_cbrt(n * n * n));
+    assert_uint64(i, ==, ngtcp2_cbrt(n));
+    assert_uint64(i - 1, ==, ngtcp2_cbrt(n - 1));
+  }
+
+  assert_uint64(2642245, ==, ngtcp2_cbrt(UINT64_MAX));
+  assert_uint64(0, ==, ngtcp2_cbrt(0));
 }

@@ -27,25 +27,30 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
 
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
 #include <wolfssl/quic.h>
 
+#include "shared.h"
+
+using namespace ngtcp2;
+
 class TLSClientContext {
 public:
-  TLSClientContext();
+  TLSClientContext() = default;
   ~TLSClientContext();
 
-  int init(const char *private_key_file, const char *cert_file);
+  std::expected<void, Error> init(const char *private_key_file,
+                                  const char *cert_file);
 
   WOLFSSL_CTX *get_native_handle() const;
 
   void enable_keylog();
 
 private:
-  WOLFSSL_CTX *ssl_ctx_;
+  WOLFSSL_CTX *ssl_ctx_{};
 };
 
-#endif // TLS_CLIENT_CONTEXT_WOLFSSL_H
+#endif // !defined(TLS_CLIENT_CONTEXT_WOLFSSL_H)

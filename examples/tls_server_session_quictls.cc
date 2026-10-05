@@ -24,31 +24,27 @@
  */
 #include "tls_server_session_quictls.h"
 
-#include <iostream>
-
 #include <openssl/err.h>
 
 #include "tls_server_context_quictls.h"
 #include "server_base.h"
 
-TLSServerSession::TLSServerSession() {}
-
-TLSServerSession::~TLSServerSession() {}
-
-int TLSServerSession::init(const TLSServerContext &tls_ctx,
-                           HandlerBase *handler) {
+std::expected<void, Error>
+TLSServerSession::init(const TLSServerContext &tls_ctx, HandlerBase *handler) {
   auto ssl_ctx = tls_ctx.get_native_handle();
 
   ssl_ = SSL_new(ssl_ctx);
   if (!ssl_) {
-    std::cerr << "SSL_new: " << ERR_error_string(ERR_get_error(), nullptr)
-              << std::endl;
-    return -1;
+    std::println(stderr, "SSL_new: {}",
+                 ERR_error_string(ERR_get_error(), nullptr));
+    return std::unexpected{Error::CRYPTO};
   }
 
   SSL_set_app_data(ssl_, handler->conn_ref());
   SSL_set_accept_state(ssl_);
+#ifndef LIBRESSL_VERSION_NUMBER
   SSL_set_quic_early_data_enabled(ssl_, 1);
+#endif // !defined(LIBRESSL_VERSION_NUMBER)
 
-  return 0;
+  return {};
 }

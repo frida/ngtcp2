@@ -27,25 +27,27 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif // HAVE_CONFIG_H
+#endif // defined(HAVE_CONFIG_H)
 
 #include <string>
+#include <string_view>
 
 #include <gnutls/gnutls.h>
 
 class TLSSessionBase {
 public:
-  TLSSessionBase();
+  TLSSessionBase() = default;
   ~TLSSessionBase();
 
   gnutls_session_t get_native_handle() const;
 
   std::string get_cipher_name() const;
+  std::string_view get_negotiated_group() const;
   std::string get_selected_alpn() const;
   void enable_keylog();
 
 protected:
-  gnutls_session_t session_;
+  gnutls_session_t session_{};
 };
 
-#endif // TLS_SESSION_BASE_GNUTLS_H
+#endif // !defined(TLS_SESSION_BASE_GNUTLS_H)

@@ -1,39 +1,81 @@
+FROM ubuntu:24.04 AS build
+
+ARG TARGETPLATFORM
+ARG NGTCP2_BRANCH=main
+
+RUN <<EOF
+set -e
+
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git clang-19 libclang-rt-19-dev libstdc++-14-dev \
+    make autoconf automake autotools-dev libtool \
+    pkg-config ca-certificates \
+    libev-dev libjemalloc-dev media-types
+
+case "$TARGETPLATFORM" in
+    "linux/amd64")
+        export WSSLFLAGS="--enable-aesni"
+        ;;
+    "linux/arm64")
+        export WSSLFLAGS="--enable-armasm"
+        ;;
+esac
+
+git clone --depth 1 -b v5.9.2-stable https://github.com/wolfSSL/wolfssl
+cd wolfssl
+autoreconf -i
+./configure --disable-dependency-tracking --enable-static --enable-all \
+    --enable-harden --enable-keylog-export --disable-ech \
+    --enable-ticket-nonce-malloc --enable-mlkem $WSSLFLAGS \
+    CC=clang-19 \
+    CXX=clang++-19
+make -j$(nproc)
+make install
+cd ..
+rm -rf wolfssl
+
+git clone --recursive --shallow-submodules --depth 1 \
+    https://github.com/ngtcp2/nghttp3
+cd nghttp3
+autoreconf -i
+./configure --disable-dependency-tracking --enable-lib-only \
+    CC=clang-19 \
+    CXX=clang++-19 \
+    LDFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined" \
+    CPPFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -g3"
+make -j$(nproc)
+make install
+cd ..
+rm -rf nghttp3
+
+git clone --recursive --shallow-submodules --depth 1 -b $NGTCP2_BRANCH \
+    https://github.com/ngtcp2/ngtcp2
+cd ngtcp2
+autoreconf -i
+./configure \
+    CC=clang-19 \
+    CXX=clang++-19 \
+    LIBTOOL_LDFLAGS="-static-libtool-libs" \
+    LDFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined" \
+    CPPFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -g3" \
+    LIBEV_LIBS="-l:libev.a" \
+    JEMALLOC_LIBS="-l:libjemalloc.a" \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
+    --disable-dependency-tracking \
+    --with-wolfssl
+make -j$(nproc)
+cp examples/wsslclient examples/wsslserver \
+   examples/wsslhqclient examples/wsslhqserver /usr/local/bin
+cd ..
+rm -rf ngtcp2
+EOF
+
 FROM martenseemann/quic-network-simulator-endpoint:latest
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        git gcc clang-12 make binutils autoconf automake autotools-dev libtool \
-        pkg-config libev-dev libjemalloc-dev \
-        libev4 libjemalloc2 ca-certificates mime-support \
-        llvm-12 libasan5 libubsan1 && \
-    git clone --depth 1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl && \
-    cd openssl && ./config --openssldir=/etc/ssl && make -j$(nproc) && make install_sw && cd .. && rm -rf openssl && \
-    git clone --depth 1 https://github.com/ngtcp2/nghttp3 && \
-    cd nghttp3 && autoreconf -i && \
-    ./configure --enable-lib-only \
-        CC=clang-12 \
-        CXX=clang++-12 \
-        LDFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined" \
-        CPPFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -g3" && \
-    make -j$(nproc) && make install && cd .. && rm -rf nghttp3 && \
-    git clone --depth 1 https://github.com/ngtcp2/ngtcp2 && \
-    cd ngtcp2 && autoreconf -i && \
-    ./configure \
-        CC=clang-12 \
-        CXX=clang++-12 \
-        LDFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined" \
-        CPPFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -g3" && \
-    make -j$(nproc) && make install && \
-    cp examples/qtlsserver examples/qtlsclient examples/h09qtlsserver examples/h09qtlsclient /usr/local/bin && \
-    cd .. && \
-    rm -rf ngtcp2 && \
-    rm -rf /usr/local/lib/libssl.so /usr/local/lib/libcrypto.so /usr/local/lib/libssl.a /usr/local/lib/libcrypto.a /usr/local/lib/pkgconfig/*ssl.pc /usr/local/include/openssl/* && \
-    apt-get -y purge git g++ clang-12 make binutils autoconf automake \
-        autotools-dev libtool pkg-config \
-        libev-dev libjemalloc-dev && \
-    apt-get -y autoremove --purge && \
-    rm -rf /var/log/*
+COPY --from=build --link /usr/local/bin/wsslclient /usr/local/bin/wsslserver \
+    /usr/local/bin/wsslhqclient /usr/local/bin/wsslhqserver /usr/local/bin/
+COPY --from=build --link /etc/mime.types /etc/
+COPY --link --chmod=0775 run_endpoint.sh .
 
-COPY run_endpoint.sh .
-RUN chmod +x run_endpoint.sh
 ENTRYPOINT [ "./run_endpoint.sh" ]

@@ -25,8 +25,10 @@
 #include "util.h"
 
 #include <cassert>
-#include <iostream>
 #include <array>
+#include <algorithm>
+#include <expected>
+#include <filesystem>
 
 #include <ngtcp2/ngtcp2_crypto.h>
 
@@ -41,100 +43,135 @@ namespace ngtcp2 {
 
 namespace util {
 
-int generate_secure_random(uint8_t *data, size_t datalen) {
-  if (RAND_bytes(data, static_cast<int>(datalen)) != 1) {
-    return -1;
+std::expected<void, Error> generate_secure_random(std::span<uint8_t> data) {
+#ifdef WITH_EXAMPLE_BORINGSSL
+  using size_type = size_t;
+#else  // !defined(WITH_EXAMPLE_BORINGSSL)
+  using size_type = int;
+#endif // !defined(WITH_EXAMPLE_BORINGSSL)
+
+  if (RAND_bytes(data.data(), static_cast<size_type>(data.size())) != 1) {
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return 0;
+  return {};
 }
 
-int generate_secret(uint8_t *secret, size_t secretlen) {
-  std::array<uint8_t, 16> rand;
-  std::array<uint8_t, 32> md;
-
-  assert(md.size() == secretlen);
-
-  if (generate_secure_random(rand.data(), rand.size()) != 0) {
-    return -1;
-  }
-
-  auto ctx = EVP_MD_CTX_new();
-  if (ctx == nullptr) {
-    return -1;
-  }
-
-  auto ctx_deleter = defer(EVP_MD_CTX_free, ctx);
-
-  unsigned int mdlen = md.size();
-  if (!EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) ||
-      !EVP_DigestUpdate(ctx, rand.data(), rand.size()) ||
-      !EVP_DigestFinal_ex(ctx, md.data(), &mdlen)) {
-    return -1;
-  }
-
-  std::copy_n(std::begin(md), secretlen, secret);
-  return 0;
-}
-
-namespace {
-void openssl_free_wrap(void *ptr) { OPENSSL_free(ptr); }
-} // namespace
-
-std::optional<std::string> read_pem(const std::string_view &filename,
-                                    const std::string_view &name,
-                                    const std::string_view &type) {
-  auto f = BIO_new_file(filename.data(), "r");
+std::expected<HPKEPrivateKey, Error>
+read_hpke_private_key_pem(const std::filesystem::path &path) {
+  auto f = BIO_new_file(path.c_str(), "r");
   if (f == nullptr) {
-    std::cerr << "Could not open " << name << " file " << filename << std::endl;
-    return {};
+    std::println(stderr, "Could not open file {}", path.native());
+    return std::unexpected{Error::IO};
   }
 
-  auto f_d = defer(BIO_free, f);
+  auto f_d = defer([f] { BIO_free(f); });
 
-  char *pem_type, *header;
-  unsigned char *data;
-  long datalen;
+  EVP_PKEY *pkey;
 
-  if (PEM_read_bio(f, &pem_type, &header, &data, &datalen) != 1) {
-    std::cerr << "Could not read " << name << " file " << filename << std::endl;
-    return {};
+  if (PEM_read_bio_PrivateKey(f, &pkey, nullptr, nullptr) == nullptr) {
+    return std::unexpected{Error::IO};
   }
 
-  auto pem_type_d = defer(openssl_free_wrap, pem_type);
-  auto pem_header = defer(openssl_free_wrap, header);
-  auto data_d = defer(openssl_free_wrap, data);
+  auto pkey_d = defer([pkey] { EVP_PKEY_free(pkey); });
 
-  if (type != pem_type) {
-    std::cerr << name << " file " << filename << " contains unexpected type"
-              << std::endl;
-    return {};
+  HPKEPrivateKey res;
+
+  switch (EVP_PKEY_id(pkey)) {
+  case EVP_PKEY_X25519: {
+    res.type = HPKE_DHKEM_X25519_HKDF_SHA256;
+
+    size_t len;
+
+    EVP_PKEY_get_raw_private_key(pkey, nullptr, &len);
+
+    res.bytes.resize(len);
+
+    EVP_PKEY_get_raw_private_key(pkey, &res.bytes[0], &len);
+
+    break;
+  }
+  default:
+    return std::unexpected{Error::UNSUPPORTED};
   }
 
-  return std::string{data, data + datalen};
+  return res;
 }
 
-int write_pem(const std::string_view &filename, const std::string_view &name,
-              const std::string_view &type, const uint8_t *data,
-              size_t datalen) {
-  auto f = BIO_new_file(filename.data(), "w");
+std::expected<std::vector<uint8_t>, Error>
+read_pem(const std::filesystem::path &path, std::string_view name,
+         std::string_view type) {
+  auto f = BIO_new_file(path.c_str(), "r");
   if (f == nullptr) {
-    std::cerr << "Could not write " << name << " in " << filename << std::endl;
-    return -1;
+    std::println(stderr, "Could not open {} file {}", name, path.native());
+    return std::unexpected{Error::IO};
   }
 
-  PEM_write_bio(f, type.data(), "", data, datalen);
+  auto f_d = defer([f] { BIO_free(f); });
+
+  for (;;) {
+    char *pem_type, *header;
+    unsigned char *data;
+    long datalen;
+
+    if (PEM_read_bio(f, &pem_type, &header, &data, &datalen) != 1) {
+      std::println(stderr, "Could not read {} file {}", name, path.native());
+      return std::unexpected{Error::IO};
+    }
+
+    auto pem_d = defer([pem_type, header, data] {
+      OPENSSL_free(pem_type);
+      OPENSSL_free(header);
+      OPENSSL_free(data);
+    });
+
+    if (type != pem_type) {
+      continue;
+    }
+
+    return {{data, data + datalen}};
+  }
+}
+
+std::expected<void, Error> write_pem(const std::filesystem::path &path,
+                                     std::string_view name,
+                                     std::string_view type,
+                                     std::span<const uint8_t> data) {
+  auto f = BIO_new_file(path.c_str(), "w");
+  if (f == nullptr) {
+    std::println(stderr, "Could not write {} in {}", name, path.native());
+    return std::unexpected{Error::IO};
+  }
+
+  PEM_write_bio(f, type.data(), "", data.data(),
+                static_cast<long>(data.size()));
   BIO_free(f);
 
-  return 0;
+  return {};
 }
 
 const char *crypto_default_ciphers() {
+#if defined(WITH_EXAMPLE_QUICTLS) || defined(WITH_EXAMPLE_OSSL)
   return "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_"
-         "SHA256:TLS_AES_128_CCM_SHA256";
+         "SHA256"
+#  ifndef LIBRESSL_VERSION_NUMBER
+         ":TLS_AES_128_CCM_SHA256"
+#  endif // !defined(LIBRESSL_VERSION_NUMBER)
+    ;
+#else  // !(defined(WITH_EXAMPLE_QUICTLS) && defined(WITH_EXAMPLE_OSSL))
+  return "";
+#endif // !(defined(WITH_EXAMPLE_QUICTLS) && defined(WITH_EXAMPLE_OSSL))
 }
 
-const char *crypto_default_groups() { return "X25519:P-256:P-384:P-521"; }
+const char *crypto_default_groups() {
+  return "X25519:P-256:P-384:P-521"
+#if defined(WITH_EXAMPLE_BORINGSSL) || defined(WITH_EXAMPLE_OSSL) ||           \
+  defined(LIBRESSL_VERSION_NUMBER)
+         ":X25519MLKEM768"
+#endif // defined(WITH_EXAMPLE_BORINGSSL) || defined(WITH_EXAMPLE_OSSL) ||
+       // defined(LIBRESSL_VERSION_NUMBER)
+    ;
+}
 
 } // namespace util
 

@@ -18,11 +18,14 @@ to build QUIC application you have to choose one of them.  Here is the
 list of TLS stacks which are supposed to provide such interface and
 for which we provide crypto helper libraries:
 
-* `quictls <https://github.com/quictls/openssl>`_
+* `quictls <https://github.com/quictls/openssl>`_ (deprecated)
 * GnuTLS
 * BoringSSL
+* aws-lc
 * Picotls
 * wolfSSL
+* LibreSSL
+* OpenSSL (experimental)
 
 Creating ngtcp2_conn object
 ---------------------------
@@ -53,8 +56,8 @@ callback functions must be set:
 * :member:`recv_retry <ngtcp2_callbacks.recv_retry>`:
   `ngtcp2_crypto_recv_retry_cb()` can be passed directly.
 * :member:`rand <ngtcp2_callbacks.rand>`
-* :member:`get_new_connection_id
-  <ngtcp2_callbacks.get_new_connection_id>`
+* :member:`get_new_connection_id2
+  <ngtcp2_callbacks.get_new_connection_id2>`
 * :member:`update_key <ngtcp2_callbacks.update_key>`:
   `ngtcp2_crypto_update_key_cb()` can be passed directly.
 * :member:`delete_crypto_aead_ctx
@@ -64,9 +67,9 @@ callback functions must be set:
   <ngtcp2_callbacks.delete_crypto_cipher_ctx>`:
   `ngtcp2_crypto_delete_crypto_cipher_ctx_cb()` can be passed
   directly.
-* :member:`get_path_challenge_data
-  <ngtcp2_callbacks.get_path_challenge_data>`:
-  `ngtcp2_crypto_get_path_challenge_data_cb()` can be passed directly.
+* :member:`get_path_challenge_data2
+  <ngtcp2_callbacks.get_path_challenge_data2>`:
+  `ngtcp2_crypto_get_path_challenge_data2_cb()` can be passed directly.
 * :member:`version_negotiation
   <ngtcp2_callbacks.version_negotiation>`:
   `ngtcp2_crypto_version_negotiation_cb()` can be passed directly.
@@ -85,8 +88,8 @@ For server application, the following callback functions must be set:
 * :member:`hp_mask <ngtcp2_callbacks.hp_mask>`:
   `ngtcp2_crypto_hp_mask_cb()` can be passed directly.
 * :member:`rand <ngtcp2_callbacks.rand>`
-* :member:`get_new_connection_id
-  <ngtcp2_callbacks.get_new_connection_id>`
+* :member:`get_new_connection_id2
+  <ngtcp2_callbacks.get_new_connection_id2>`
 * :member:`update_key <ngtcp2_callbacks.update_key>`:
   `ngtcp2_crypto_update_key_cb()` can be passed directly.
 * :member:`delete_crypto_aead_ctx
@@ -96,9 +99,9 @@ For server application, the following callback functions must be set:
   <ngtcp2_callbacks.delete_crypto_cipher_ctx>`:
   `ngtcp2_crypto_delete_crypto_cipher_ctx_cb()` can be passed
   directly.
-* :member:`get_path_challenge_data
-  <ngtcp2_callbacks.get_path_challenge_data>`:
-  `ngtcp2_crypto_get_path_challenge_data_cb()` can be passed directly.
+* :member:`get_path_challenge_data2
+  <ngtcp2_callbacks.get_path_challenge_data2>`:
+  `ngtcp2_crypto_get_path_challenge_data2_cb()` can be passed directly.
 * :member:`version_negotiation
   <ngtcp2_callbacks.version_negotiation>`:
   `ngtcp2_crypto_version_negotiation_cb()` can be passed directly.
@@ -150,6 +153,8 @@ path.  An application must provide actual path to the API function to
 tell the library where a packet comes from.  The "write" API function
 takes path parameter and fills it to which the packet should be sent.
 
+.. _tls-integration:
+
 TLS integration
 ---------------
 
@@ -161,34 +166,7 @@ The most of the TLS work is done by the callback functions passed to
 application in order to make TLS integration work.  We have a set of
 helper functions to make it easier for applications to configure TLS
 stack object to work with QUIC and ngtcp2.  They are specific to each
-supported TLS stack:
-
-- quictls
-
-  * `ngtcp2_crypto_quictls_configure_client_context`
-  * `ngtcp2_crypto_quictls_configure_server_context`
-
-- BoringSSL
-
-  * `ngtcp2_crypto_boringssl_configure_client_context`
-  * `ngtcp2_crypto_boringssl_configure_server_context`
-
-- GnuTLS
-
-  * `ngtcp2_crypto_gnutls_configure_client_session`
-  * `ngtcp2_crypto_gnutls_configure_server_session`
-
-- Picotls
-
-  * `ngtcp2_crypto_picotls_configure_client_context`
-  * `ngtcp2_crypto_picotls_configure_server_context`
-  * `ngtcp2_crypto_picotls_configure_client_session`
-  * `ngtcp2_crypto_picotls_configure_server_session`
-
-- wolfSSL
-
-  * `ngtcp2_crypto_wolfssl_configure_client_context`
-  * `ngtcp2_crypto_wolfssl_configure_server_context`
+supported TLS stack.
 
 They make the minimal QUIC specific changes to TLS stack object.  See
 the ngtcp2 crypto API header files for each supported TLS stack.  In
@@ -198,6 +176,138 @@ object, and its :member:`ngtcp2_crypto_conn_ref.get_conn` must point
 to a function which returns :type:`ngtcp2_conn` of the underlying QUIC
 connection.
 
+quictls
+~~~~~~~
+
+The ``SSL_CTX`` object should be configured with one of the following
+functions:
+
+* `ngtcp2_crypto_quictls_configure_client_context`
+* `ngtcp2_crypto_quictls_configure_server_context`
+
+The ``SSL`` should be set as the TLS native handle for the connection
+using `ngtcp2_conn_set_tls_native_handle`.
+
+:type:`ngtcp2_crypto_conn_ref` must be set as a user data in ``SSL``
+object via ``SSL_set_app_data``.
+
+`ngtcp2_crypto_recv_crypto_data_cb` treats the following errors from
+`ngtcp2_crypto_read_write_crypto_data` as success:
+
+- :macro:`NGTCP2_CRYPTO_QUICTLS_ERR_TLS_WANT_X509_LOOKUP`
+- :macro:`NGTCP2_CRYPTO_QUICTLS_ERR_TLS_WANT_CLIENT_HELLO_CB`
+
+To continue the handshake, call `ngtcp2_conn_continue_handshake`.
+
+BoringSSL and aws-lc
+~~~~~~~~~~~~~~~~~~~~
+
+The ``SSL_CTX`` object should be configured with one of the following
+functions:
+
+* `ngtcp2_crypto_boringssl_configure_client_context`
+* `ngtcp2_crypto_boringssl_configure_server_context`
+
+The ``SSL`` should be set as the TLS native handle for the connection
+using `ngtcp2_conn_set_tls_native_handle`.
+
+:type:`ngtcp2_crypto_conn_ref` must be set as a user data in ``SSL``
+object via ``SSL_set_app_data``.
+
+`ngtcp2_crypto_read_write_crypto_data` treats the following errors
+from ``SSL_do_handshake`` as success in order to support the
+asynchronous operations:
+
+- ``SSL_ERROR_WANT_X509_LOOKUP``
+- ``SSL_ERROR_WANT_PRIVATE_KEY_OPERATION``
+- ``SSL_ERROR_WANT_CERTIFICATE_VERIFY``
+
+To continue the handshake, call `ngtcp2_conn_continue_handshake`.
+
+GnuTLS
+~~~~~~
+
+The ``gnutls_session_t`` object should be configured with one of the
+following functions:
+
+* `ngtcp2_crypto_gnutls_configure_client_session`
+* `ngtcp2_crypto_gnutls_configure_server_session`
+
+The ``gnutls_session_t`` should be set as the TLS native handle for
+the connection using `ngtcp2_conn_set_tls_native_handle`.
+
+:type:`ngtcp2_crypto_conn_ref` must be set as a user data in
+``gnutls_session_t`` object via ``gnutls_session_set_ptr``.
+
+Picotls
+~~~~~~~
+
+The ``ptls_context_t`` object should be configured with one of the
+following functions:
+
+* `ngtcp2_crypto_picotls_configure_client_context`
+* `ngtcp2_crypto_picotls_configure_server_context`
+
+For each TLS session, create :type:`ngtcp2_crypto_picotls_ctx` object.
+It should be initialized by `ngtcp2_crypto_picotls_ctx_init`, and
+configured with one of the following functions:
+
+* `ngtcp2_crypto_picotls_configure_client_session`
+* `ngtcp2_crypto_picotls_configure_server_session`
+
+The :type:`ngtcp2_crypto_picotls_ctx` should be set as the TLS native
+handle for the connection using `ngtcp2_conn_set_tls_native_handle`.
+
+:type:`ngtcp2_crypto_conn_ref` must be set as a user data in
+``ptls_t`` object inside :type:`ngtcp2_crypto_picotls_ctx` via
+``ptls_get_data_ptr``.
+
+wolfSSL
+~~~~~~~
+
+The ``WOLFSSL_CTX`` object should be configured with one of the
+following functions:
+
+* `ngtcp2_crypto_wolfssl_configure_client_context`
+* `ngtcp2_crypto_wolfssl_configure_server_context`
+
+The ``WOLFSSL`` should be set as the TLS native handle for the
+connection using `ngtcp2_conn_set_tls_native_handle`.
+
+:type:`ngtcp2_crypto_conn_ref` must be set as a user data in
+``WOLFSSL`` object via ``wolfSSL_set_app_data``.
+
+OpenSSL
+~~~~~~~
+
+The ``SSL`` object should be configured with one of the following
+functions:
+
+* `ngtcp2_crypto_ossl_configure_client_session`
+* `ngtcp2_crypto_ossl_configure_server_session`
+
+For each TLS session, create :type:`ngtcp2_crypto_ossl_ctx` via
+`ngtcp2_crypto_ossl_ctx_new`.  It should be set as the TLS native
+handle for the connection using `ngtcp2_conn_set_tls_native_handle`.
+
+:type:`ngtcp2_crypto_conn_ref` must be set as a user data in
+``SSL`` object via ``SSL_set_app_data``.
+
+The application must make sure that :type:`ngtcp2_conn` is kept alive
+until the ``SSL`` object is freed by ``SSL_free``, or it must call
+``SSL_set_app_data(ssl, NULL)`` before calling ``SSL_free``.
+
+`ngtcp2_crypto_recv_crypto_data_cb` treats the following errors from
+`ngtcp2_crypto_read_write_crypto_data` as success:
+
+- :macro:`NGTCP2_CRYPTO_OSSL_ERR_TLS_WANT_X509_LOOKUP`
+- :macro:`NGTCP2_CRYPTO_OSSL_ERR_TLS_WANT_CLIENT_HELLO_CB`
+
+To continue the handshake, call `ngtcp2_conn_continue_handshake`.
+
+Configuring TLS stack yourself
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 If you do not use the above helper functions, you need to generate and
 install keys to :type:`ngtcp2_conn`, and pass handshake messages to
 :type:`ngtcp2_conn` as well.  When TLS stack generates new secrets,
@@ -206,6 +316,24 @@ they have to be installed to :type:`ngtcp2_conn` by calling
 `ngtcp2_crypto_derive_and_install_tx_key()`.  When TLS stack generates
 new crypto data to send, they must be passed to :type:`ngtcp2_conn` by
 calling `ngtcp2_conn_submit_crypto_data()`.
+
+Continue the interrupted TLS handshake
+--------------------------------------
+
+Some TLS stacks offer the capability to interrupt TLS handshake to
+perform certain operations asynchronously (e.g., private key signing,
+certificate lookup).  In general, ngtcp2 does not need to know whether
+the TLS handshake is interrupted or not.  In most cases, if the
+interruption happens, the TLS handshake function returns the special
+error codes.  For supported operations, ngtcp2 crypto helper library
+treats them as success (see the above `TLS integration`_ section,
+`ngtcp2_crypto_read_write_crypto_data`, and
+`ngtcp2_crypto_recv_crypto_data_cb`).  The interrupted handshake is
+not restarted automatically.  To continue the handshake, application
+should call `ngtcp2_conn_continue_handshake`.
+
+QUIC handshake completion
+-------------------------
 
 When QUIC handshake is completed,
 :member:`ngtcp2_callbacks.handshake_completed` callback function is
@@ -222,8 +350,9 @@ Read and write packets
 
 `ngtcp2_conn_read_pkt()` processes the incoming QUIC packets.  In
 order to write QUIC packets, call `ngtcp2_conn_writev_stream()` or
-`ngtcp2_conn_write_pkt()`.  The *destlen* parameter must be at least
-the value returned from `ngtcp2_conn_get_max_tx_udp_payload_size()`.
+`ngtcp2_conn_write_pkt()`.  The *destlen* parameter should be at least
+:member:`ngtcp2_settings.max_tx_udp_payload_size`, and must be at
+least 1200 bytes.
 
 In order to send stream data, the application has to first open a
 stream.  In earliest, clients can open streams after installing 1RTT
@@ -249,13 +378,164 @@ stream.  For unidirectional stream, call
 to send stream data.
 
 An application should pace sending packets.
-`ngtcp2_conn_get_send_quantum()` returns the number of bytes that can
+`ngtcp2_conn_get_send_quantum2()` returns the number of bytes that can
 be sent without packet spacing.  After one or more calls of
 `ngtcp2_conn_writev_stream()` (it can be called multiple times to fill
-the buffer sized up to `ngtcp2_conn_get_send_quantum()` bytes), call
+the buffer sized up to `ngtcp2_conn_get_send_quantum2()` bytes), call
 `ngtcp2_conn_update_pkt_tx_time()` to set the timer when the next
 packet should be sent.  The timer is integrated into
-`ngtcp2_conn_get_expiry()`.
+`ngtcp2_conn_get_expiry2()`.
+
+Aggregate packets for GSO
+-------------------------
+
+On some platforms, the overhead of sending UDP datagram is far more
+expensive than sending TCP packets.  To workaround this, some
+platforms offer a function, like GSO in Linux, that accepts multiple
+UDP datagrams in 1 system call, and saves the overhead.
+
+To build such a train of packets, an application needs to make
+multiple calls to `ngtcp2_conn_writev_stream()` or its variants.  To
+make things simpler, ngtcp2 offers
+`ngtcp2_conn_write_aggregate_pkt()`, which conveniently aggregates
+packets suitable for sending in GSO.  It also enforces pacing
+automatically by calling `ngtcp2_conn_update_pkt_tx_time()`
+internally.  Please note that `ngtcp2_conn_write_aggregate_pkt()`
+requires the buffer of at least
+`ngtcp2_conn_get_path_max_tx_udp_payload_size2()` bytes long.
+
+Pseudo code for writing packets with GSO
+----------------------------------------
+
+As discussed in the previous section,
+`ngtcp2_conn_write_aggregate_pkt()` is a convenient function to batch
+multiple packets into a GSO buffer.  Conceptually, it looks like this:
+
+.. code-block:: c
+
+   int write_streams(ngtcp2_conn *conn) {
+     ngtcp2_path_storage ps;
+     ngtcp2_pkt_info pi;
+     size_t gso_size;
+     ngtcp2_tstamp ts = timestamp();
+     uint8_t *txbuf = ...; /* GSO buffer up to 64KiB */
+     size_t buflen = ...; /* size of txbuf */
+
+     ngtcp2_path_storage_zero(&ps);
+
+     ngtcp2_ssize nwrite = ngtcp2_conn_write_aggregate_pkt(
+       conn, &ps.path, &pi, txbuf, buflen, &gso_size, write_pkt,
+       ts);
+     if (nwrite < 0) {
+       return -1;
+     }
+
+     if (nwrite == 0) {
+       return 0;
+     }
+
+     send_packet(ps.path, pi.ecn, txbuf, (size_t)nwrite, gso_size);
+
+     return 0;
+   }
+
+`ngtcp2_conn_write_aggregate_pkt()` calls
+`ngtcp2_conn_update_pkt_tx_time()` internally, which sets up the timer
+for packet pacing.
+
+``write_pkt()`` is a function to produce a single UDP datagram
+payload:
+
+.. code-block:: c
+
+   ngtcp2_ssize write_pkt(ngtcp2_conn *conn, ngtcp2_path *path,
+			  ngtcp2_pkt_info *pi, uint8_t *dest, size_t destlen,
+			  ngtcp2_tstamp ts, void *user_data) {
+     ngtcp2_vec vec[16];
+
+     for (;;) {
+       int64_t stream_id = -1;
+       int fin = 0;
+       size_t veccnt = 0;
+
+       if (ngtcp2_conn_get_max_data_left2(conn)) {
+	 /* Get application stream data here.
+	    Fill stream_id, fin, vec, and veccnt. */
+	 ...
+       }
+
+       ngtcp2_ssize ndatalen;
+
+       uint32_t flags =
+	 NGTCP2_WRITE_STREAM_FLAG_MORE | NGTCP2_WRITE_STREAM_FLAG_PADDING;
+       if (fin) {
+	 flags |= NGTCP2_WRITE_STREAM_FLAG_FIN;
+       }
+
+       ngtcp2_ssize nwrite = ngtcp2_conn_writev_stream(
+	 conn, path, pi, dest, destlen, &ndatalen, flags, stream_id,
+	 vec, veccnt, ts);
+       if (nwrite < 0) {
+	 switch (nwrite) {
+	 case NGTCP2_ERR_STREAM_DATA_BLOCKED:
+	   /* The stream data cannot be written due to stream-level flow
+	      control.  Tell the application not to write this stream
+	      data until notified by
+	      ngtcp2_callbacks.extend_max_stream_data. */
+           ...
+	   continue;
+	 case NGTCP2_ERR_STREAM_SHUT_WR:
+	   /* The send side of the stream has closed.  Tell the application
+	      to close that side of the stream. */
+           ...
+	   continue;
+	 case NGTCP2_ERR_WRITE_MORE:
+	   /* We have written ndatalen bytes of data.  Tell the application
+	      that we made progress. */
+           ...
+	   continue;
+	 }
+
+	 return NGTCP2_ERR_CALLBACK_FAILURE;
+       }
+
+       if (ndatalen >= 0) {
+	 /* We have written ndatalen bytes of data.  Tell the application
+	    that we made progress. */
+         ...
+       }
+
+       /* If nwrite > 0, we made a complete UDP datagram payload.
+	  If nwrite == 0, no payload is produced, which means we have nothing
+	  to send at this time. */
+
+       return nwrite;
+     }
+   }
+
+Do not try to write the application stream data while
+`ngtcp2_conn_get_max_data_left2()` returns 0.  This ensures that
+:macro:`NGTCP2_ERR_STREAM_DATA_BLOCKED` from
+`ngtcp2_conn_writev_stream()` is caused by stream-level flow control.
+Note that ``ndatalen`` could be 0, which is a valid write signal
+(e.g., only write fin without data).
+
+``write_streams()`` should be called after we have received any
+packets and processed them with `ngtcp2_conn_read_pkt()`.  It should
+also be called after `ngtcp2_conn_handle_expiry()`.  It is fine to
+just schedule the call, but generally ``write_streams()`` should be
+called as soon as possible to reduce the latency.
+
+Outgoing UDP datagram payload size
+----------------------------------
+
+The outgoing UDP datagram payload size is 1200 by default.  It may be
+increased up to :member:`ngtcp2_settings.max_tx_udp_payload_size` by
+Path MTU Discovery (PMTUD).  The PMTUD probes are configurable through
+:member:`ngtcp2_settings.pmtud_probes` and
+:member:`ngtcp2_settings.pmtud_probeslen`.  If these values are
+changed, the largest value should be set to
+:member:`ngtcp2_settings.max_tx_udp_payload_size` as well.
 
 Packet handling on server side
 ------------------------------
@@ -275,7 +555,7 @@ belongs to an existing connection, pass the UDP datagram to
 connection, it should be passed to `ngtcp2_accept()`.  If it returns a
 negative error code, just drop the packet to the floor and take no
 action, or send Stateless Reset packet (use
-`ngtcp2_pkt_write_stateless_reset()` to create Stateless Reset
+`ngtcp2_pkt_write_stateless_reset2()` to create Stateless Reset
 packet).  Otherwise, the UDP datagram is acceptable as a new
 connection.  Create :type:`ngtcp2_conn` object and pass the UDP
 datagram to `ngtcp2_conn_read_pkt()`.
@@ -289,11 +569,12 @@ datagram is received, and it does not belong to any existing
 connections, and it is successfully processed by
 `ngtcp2_conn_read_pkt()`, associate the Destination Connection ID in
 the QUIC packet and :type:`ngtcp2_conn` object.  The server must
-associate the Connection IDs returned by `ngtcp2_conn_get_scid()` to
+associate the Connection IDs returned by `ngtcp2_conn_get_scid2()` to
 the :type:`ngtcp2_conn` object as well.  When new Connection ID is
-asked by the library, :member:`ngtcp2_callbacks.get_new_connection_id`
-is called.  Inside the callback, associate the newly generated
-Connection ID to the :type:`ngtcp2_conn` object.
+asked by the library,
+:member:`ngtcp2_callbacks.get_new_connection_id2` is called.  Inside
+the callback, associate the newly generated Connection ID to the
+:type:`ngtcp2_conn` object.
 
 When Connection ID is no longer used, its association should be
 removed.  When Connection ID is retired,
@@ -302,16 +583,16 @@ callback, remove the association for the Connection ID.
 
 When a QUIC connection is closed, all associations for the connection
 should be removed.  Remove all associations for Connection ID returned
-from `ngtcp2_conn_get_scid()`.  Association for the initial Connection
-ID which can be obtained by calling
-`ngtcp2_conn_get_client_initial_dcid()` should also be removed.
+from `ngtcp2_conn_get_scid2()`.  Association for the initial
+Connection ID which can be obtained by calling
+`ngtcp2_conn_get_client_initial_dcid2()` should also be removed.
 
 Dealing with 0-RTT (early) data
 -------------------------------
 
 Client application has to remember the subset of the QUIC transport
 parameters received from a server in the previous connection.
-`ngtcp2_conn_encode_0rtt_transport_params` returns the encoded QUIC
+`ngtcp2_conn_encode_0rtt_transport_params2` returns the encoded QUIC
 transport parameters that include these values.  When sending 0-RTT
 data, the remembered transport parameters should be set via
 `ngtcp2_conn_decode_and_set_0rtt_transport_params`.  Then client can
@@ -339,7 +620,7 @@ The send-side stream is closed when you call
 flag set, and all data are acknowledged.  The receive-side stream is
 closed when a local endpoint receives fin from a remote endpoint, and
 all data are received.  And then
-:member:`ngtcp2_callbacks.stream_close` is invoked.
+:member:`ngtcp2_callbacks.stream_close2` is invoked.
 
 Application can close stream abruptly by calling
 `ngtcp2_conn_shutdown_stream`.  It has
@@ -367,15 +648,21 @@ clock should work better.  It should be same clock passed to
 :member:`ngtcp2_settings.initial_ts`.  The duration in ngtcp2 library
 is :type:`ngtcp2_duration` which is also nanosecond resolution.
 
-`ngtcp2_conn_get_expiry()` tells an application when timer fires.
+`ngtcp2_conn_get_expiry2()` tells an application when timer fires.
 When it fires, call `ngtcp2_conn_handle_expiry()`.  If it returns
 :macro:`NGTCP2_ERR_IDLE_CLOSE`, it means that an idle timer has fired
 for this particular connection.  In this case, drop the connection
-without calling `ngtcp2_conn_write_connection_close()`.  Otherwise,
-call `ngtcp2_conn_writev_stream()`.  After calling
-`ngtcp2_conn_handle_expiry()` and `ngtcp2_conn_writev_stream()`, new
-expiry is set.  The application should call `ngtcp2_conn_get_expiry()`
-to get a new deadline.
+without calling `ngtcp2_conn_write_connection_close()`.  If it returns
+any of the other negative error codes, close the connection by sending
+the terminal packet produced by
+`ngtcp2_conn_write_connection_close()`.  Otherwise, schedule
+`ngtcp2_conn_writev_stream()` call.  An application may call any
+number of additional `ngtcp2_conn_read_pkt()` and
+`ngtcp2_conn_handle_expiry()` before calling
+`ngtcp2_conn_writev_stream()`.  After calling
+`ngtcp2_conn_writev_stream()`, new expiry is set.  The application
+should call `ngtcp2_conn_get_expiry2()` to get a new deadline and set
+the timer.
 
 Please note that :type:`ngtcp2_tstamp` of value ``UINT64_MAX`` is
 treated as an invalid timestamp.  Do not pass ``UINT64_MAX`` to any

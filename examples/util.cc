@@ -27,20 +27,22 @@
 
 #ifdef HAVE_ARPA_INET_H
 #  include <arpa/inet.h>
-#endif // HAVE_ARPA_INET_H
+#endif // defined(HAVE_ARPA_INET_H)
 #ifdef HAVE_NETINET_IN_H
 #  include <netinet/in.h>
-#endif
+#endif // defined(HAVE_NETINET_IN_H)
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <sys/mman.h>
 
 #include <cassert>
 #include <cstring>
+#include <cstdlib>
 #include <chrono>
 #include <array>
-#include <iostream>
 #include <fstream>
 #include <algorithm>
 #include <limits>
@@ -54,51 +56,24 @@ namespace ngtcp2 {
 
 namespace util {
 
-std::optional<std::string> read_pem(const std::string_view &filename,
-                                    const std::string_view &name,
-                                    const std::string_view &type);
+std::expected<HPKEPrivateKey, Error>
+read_hpke_private_key_pem(const std::filesystem::path &path);
 
-int write_pem(const std::string_view &filename, const std::string_view &name,
-              const std::string_view &type, const uint8_t *data,
-              size_t datalen);
+std::expected<std::vector<uint8_t>, Error>
+read_pem(const std::filesystem::path &path, std::string_view name,
+         std::string_view type);
 
-namespace {
-constexpr char LOWER_XDIGITS[] = "0123456789abcdef";
-} // namespace
+std::expected<void, Error> write_pem(const std::filesystem::path &path,
+                                     std::string_view name,
+                                     std::string_view type,
+                                     std::span<const uint8_t> data);
 
-std::string format_hex(uint8_t c) {
-  std::string s;
-  s.resize(2);
-
-  s[0] = LOWER_XDIGITS[c >> 4];
-  s[1] = LOWER_XDIGITS[c & 0xf];
-
-  return s;
-}
-
-std::string format_hex(const uint8_t *s, size_t len) {
-  std::string res;
-  res.resize(len * 2);
-
-  for (size_t i = 0; i < len; ++i) {
-    auto c = s[i];
-
-    res[i * 2] = LOWER_XDIGITS[c >> 4];
-    res[i * 2 + 1] = LOWER_XDIGITS[c & 0x0f];
-  }
-  return res;
-}
-
-std::string format_hex(const std::string_view &s) {
-  return format_hex(reinterpret_cast<const uint8_t *>(s.data()), s.size());
-}
-
-std::string decode_hex(const std::string_view &s) {
+std::string decode_hex(std::string_view s) {
   assert(s.size() % 2 == 0);
   std::string res(s.size() / 2, '0');
-  auto p = std::begin(res);
-  for (auto it = std::begin(s); it != std::end(s); it += 2) {
-    *p++ = (hex_to_uint(*it) << 4) | hex_to_uint(*(it + 1));
+  auto p = std::ranges::begin(res);
+  for (auto it = std::ranges::begin(s); it != std::ranges::end(s); it += 2) {
+    *p++ = static_cast<char>((hex_to_uint(*it) << 4) | hex_to_uint(*(it + 1)));
   }
   return res;
 }
@@ -135,7 +110,7 @@ uint64_t round2even(uint64_t n) {
 } // namespace
 
 std::string format_durationf(uint64_t ns) {
-  static constexpr const std::string_view units[] = {"us"sv, "ms"sv, "s"sv};
+  static constexpr std::string_view units[] = {"us"sv, "ms"sv, "s"sv};
   if (ns < 1000) {
     return format_uint(ns) + "ns";
   }
@@ -158,7 +133,7 @@ std::string format_durationf(uint64_t ns) {
   }
 
   auto res = format_uint(ns / 1000);
-  res += format_fraction2(ns % 1000);
+  res += format_fraction2(static_cast<uint32_t>(ns % 1000));
   res += units[unit];
 
   return res;
@@ -170,9 +145,17 @@ std::mt19937 make_mt19937() {
 }
 
 ngtcp2_tstamp timestamp() {
-  return std::chrono::duration_cast<std::chrono::nanoseconds>(
-             std::chrono::steady_clock::now().time_since_epoch())
-      .count();
+  return static_cast<ngtcp2_tstamp>(
+    std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now().time_since_epoch())
+      .count());
+}
+
+ngtcp2_tstamp system_clock_now() {
+  return static_cast<ngtcp2_tstamp>(
+    std::chrono::floor<std::chrono::nanoseconds>(
+      std::chrono::system_clock::now().time_since_epoch())
+      .count());
 }
 
 bool numeric_host(const char *hostname) {
@@ -189,74 +172,168 @@ bool numeric_host(const char *hostname, int family) {
 }
 
 namespace {
-void hexdump8(FILE *out, const uint8_t *first, const uint8_t *last) {
-  auto stop = std::min(first + 8, last);
-  for (auto k = first; k != stop; ++k) {
-    fprintf(out, "%02x ", *k);
-  }
-  // each byte needs 3 spaces (2 hex value and space)
-  for (; stop != first + 8; ++stop) {
-    fputs("   ", out);
-  }
-  // we have extra space after 8 bytes
-  fputc(' ', out);
+uint8_t *hexdump_addr(uint8_t *dest, size_t addr) {
+  // Lower 32 bits are displayed.
+  return format_hex(static_cast<uint32_t>(addr), dest);
 }
 } // namespace
 
-void hexdump(FILE *out, const uint8_t *src, size_t len) {
-  if (len == 0) {
-    return;
+namespace {
+uint8_t *hexdump_ascii(uint8_t *dest, std::span<const uint8_t> data) {
+  *dest++ = '|';
+
+  for (auto c : data) {
+    if (0x20 <= c && c <= 0x7E) {
+      *dest++ = c;
+    } else {
+      *dest++ = '.';
+    }
   }
-  size_t buflen = 0;
+
+  *dest++ = '|';
+
+  return dest;
+}
+} // namespace
+
+namespace {
+uint8_t *hexdump8(uint8_t *dest, std::span<const uint8_t> data) {
+  for (auto c : data) {
+    dest = format_hex(c, dest);
+    *dest++ = ' ';
+  }
+
+  for (auto i = data.size(); i < 8; ++i) {
+    *dest++ = ' ';
+    *dest++ = ' ';
+    *dest++ = ' ';
+  }
+
+  return dest;
+}
+} // namespace
+
+namespace {
+uint8_t *hexdump16(uint8_t *dest, std::span<const uint8_t> data) {
+  if (data.size() > 8) {
+    dest = hexdump8(dest, {data.data(), 8});
+    *dest++ = ' ';
+    dest = hexdump8(dest, data.subspan(8));
+    *dest++ = ' ';
+  } else {
+    dest = hexdump8(dest, data);
+    *dest++ = ' ';
+    dest = hexdump8(dest, {});
+    *dest++ = ' ';
+  }
+
+  return dest;
+}
+} // namespace
+
+namespace {
+uint8_t *hexdump_line(uint8_t *dest, std::span<const uint8_t> data,
+                      size_t addr) {
+  dest = hexdump_addr(dest, addr);
+  *dest++ = ' ';
+  *dest++ = ' ';
+
+  dest = hexdump16(dest, data);
+
+  return hexdump_ascii(dest, data);
+}
+} // namespace
+
+namespace {
+std::expected<void, Error> hexdump_write(int fd,
+                                         std::span<const uint8_t> data) {
+  ssize_t nwrite;
+
+  for (;
+       (nwrite = write(fd, data.data(), data.size())) == -1 && errno == EINTR;)
+    ;
+  if (nwrite == -1) {
+    return std::unexpected{Error::IO};
+  }
+
+  return {};
+}
+} // namespace
+
+std::expected<void, Error> hexdump(FILE *out, std::span<const uint8_t> data) {
+  if (data.empty()) {
+    return {};
+  }
+
+  // min_space is the additional minimum space that the buffer must
+  // accept, which is the size of a single full line output + one
+  // repeat line marker ("*\n").  If the remaining buffer size is less
+  // than that, flush the buffer and reset.
+  constexpr auto min_space = 79UZ + 2UZ;
+
+  auto fd = fileno(out);
+  std::array<uint8_t, 4096> buf;
+  auto input = data;
+  auto last = buf.data();
   auto repeated = false;
-  std::array<uint8_t, 16> buf{};
-  auto end = src + len;
-  auto i = src;
-  for (;;) {
-    auto nextlen =
-        std::min(static_cast<size_t>(16), static_cast<size_t>(end - i));
-    if (nextlen == buflen &&
-        std::equal(std::begin(buf), std::begin(buf) + buflen, i)) {
-      // as long as adjacent 16 bytes block are the same, we just
-      // print single '*'.
-      if (!repeated) {
+  std::span<const uint8_t> s, last_s{};
+
+  for (; !input.empty(); input = input.subspan(s.size())) {
+    s = input;
+
+    if (s.size() >= 16) {
+      s = s.first(16);
+
+      if (std::ranges::equal(last_s, s)) {
+        if (repeated) {
+          continue;
+        }
+
         repeated = true;
-        fputs("*\n", out);
+
+        *last++ = '*';
+        *last++ = '\n';
+
+        continue;
       }
-      i += nextlen;
-      continue;
+
+      repeated = false;
     }
-    repeated = false;
-    fprintf(out, "%08lx", static_cast<unsigned long>(i - src));
-    if (i == end) {
-      fputc('\n', out);
-      break;
-    }
-    fputs("  ", out);
-    hexdump8(out, i, end);
-    hexdump8(out, i + 8, std::max(i + 8, end));
-    fputc('|', out);
-    auto stop = std::min(i + 16, end);
-    buflen = stop - i;
-    auto p = buf.data();
-    for (; i != stop; ++i) {
-      *p++ = *i;
-      if (0x20 <= *i && *i <= 0x7e) {
-        fputc(*i, out);
-      } else {
-        fputc('.', out);
+
+    last = hexdump_line(last, s, as_unsigned(s.data() - data.data()));
+    *last++ = '\n';
+    last_s = s;
+
+    auto len = static_cast<size_t>(last - buf.data());
+    if (len + min_space > buf.size()) {
+      if (auto rv = hexdump_write(fd, {buf.data(), len}); !rv) {
+        return rv;
       }
+
+      last = buf.data();
     }
-    fputs("|\n", out);
   }
+
+  last = hexdump_addr(last, data.size());
+  *last++ = '\n';
+
+  auto len = static_cast<size_t>(last - buf.data());
+  if (len) {
+    return hexdump_write(fd, {buf.data(), len});
+  }
+
+  return {};
 }
 
-std::string make_cid_key(const ngtcp2_cid *cid) {
-  return std::string(cid->data, cid->data + cid->datalen);
-}
+ngtcp2_cid make_cid_key(std::span<const uint8_t> cid) {
+  assert(cid.size() <= NGTCP2_MAX_CIDLEN);
 
-std::string make_cid_key(const uint8_t *cid, size_t cidlen) {
-  return std::string(cid, cid + cidlen);
+  ngtcp2_cid res;
+
+  std::ranges::copy(cid, std::ranges::begin(res.data));
+  res.datalen = cid.size();
+
+  return res;
 }
 
 std::string straddr(const sockaddr *sa, socklen_t salen) {
@@ -266,7 +343,7 @@ std::string straddr(const sockaddr *sa, socklen_t salen) {
   auto rv = getnameinfo(sa, salen, host.data(), host.size(), port.data(),
                         port.size(), NI_NUMERICHOST | NI_NUMERICSERV);
   if (rv != 0) {
-    std::cerr << "getnameinfo: " << gai_strerror(rv) << std::endl;
+    std::println(stderr, "getnameinfo: {}", gai_strerror(rv));
     return "";
   }
   std::string res = "[";
@@ -274,6 +351,23 @@ std::string straddr(const sockaddr *sa, socklen_t salen) {
   res += "]:";
   res.append(port.data(), strlen(port.data()));
   return res;
+}
+
+std::string straddr(const Address &addr) {
+  return straddr(addr.as_sockaddr(), addr.size());
+}
+
+bool prohibited_port(uint16_t port) {
+  switch (port) {
+  case 1900:
+  case 5353:
+  case 11211:
+  case 20800:
+  case 27015:
+    return true;
+  default:
+    return port < 1024;
+  }
 }
 
 std::string_view strccalgo(ngtcp2_cc_algo cc_algo) {
@@ -294,11 +388,11 @@ namespace {
 constexpr bool rws(char c) { return c == '\t' || c == ' '; }
 } // namespace
 
-std::optional<std::unordered_map<std::string, std::string>>
-read_mime_types(const std::string_view &filename) {
-  std::ifstream f(filename.data());
+std::expected<std::unordered_map<std::string, std::string>, Error>
+read_mime_types(const std::filesystem::path &filename) {
+  std::ifstream f(filename);
   if (!f) {
-    return {};
+    return std::unexpected{Error::IO};
   }
 
   std::unordered_map<std::string, std::string> dest;
@@ -309,20 +403,22 @@ read_mime_types(const std::string_view &filename) {
       continue;
     }
 
-    auto p = std::find_if(std::begin(line), std::end(line), rws);
-    if (p == std::begin(line) || p == std::end(line)) {
+    auto p = std::ranges::find_if(line, rws);
+    if (p == std::ranges::begin(line) || p == std::ranges::end(line)) {
       continue;
     }
 
-    auto media_type = std::string{std::begin(line), p};
+    auto media_type = std::string{std::ranges::begin(line), p};
     for (;;) {
-      auto ext = std::find_if_not(p, std::end(line), rws);
-      if (ext == std::end(line)) {
+      auto ext = std::ranges::find_if_not(p, std::ranges::end(line), rws);
+      if (ext == std::ranges::end(line)) {
         break;
       }
 
-      p = std::find_if(ext, std::end(line), rws);
-      dest.emplace(std::string{ext, p}, media_type);
+      p = std::ranges::find_if(ext, std::ranges::end(line), rws);
+      auto key = "."s;
+      key += std::string{ext, p};
+      dest.emplace(key, media_type);
     }
   }
 
@@ -349,23 +445,27 @@ std::string format_duration(ngtcp2_duration n) {
 }
 
 namespace {
-std::optional<std::pair<uint64_t, size_t>>
-parse_uint_internal(const std::string_view &s) {
+std::expected<std::pair<uint64_t, size_t>, Error>
+parse_uint_internal(std::string_view s) {
   uint64_t res = 0;
 
   if (s.empty()) {
-    return {};
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
 
   for (size_t i = 0; i < s.size(); ++i) {
     auto c = s[i];
-    if (c < '0' || '9' < c) {
+    if (!is_digit(c)) {
+      if (i == 0) {
+        return std::unexpected{Error::INVALID_ARGUMENT};
+      }
+
       return {{res, i}};
     }
 
-    auto d = c - '0';
+    auto d = static_cast<uint64_t>(c - '0');
     if (res > (std::numeric_limits<uint64_t>::max() - d) / 10) {
-      return {};
+      return std::unexpected{Error::INTEGER_OVERFLOW};
     }
 
     res *= 10;
@@ -376,29 +476,29 @@ parse_uint_internal(const std::string_view &s) {
 }
 } // namespace
 
-std::optional<uint64_t> parse_uint(const std::string_view &s) {
+std::expected<uint64_t, Error> parse_uint(std::string_view s) {
   auto o = parse_uint_internal(s);
   if (!o) {
-    return {};
+    return std::unexpected{o.error()};
   }
   auto [res, idx] = *o;
   if (idx != s.size()) {
-    return {};
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
   return res;
 }
 
-std::optional<uint64_t> parse_uint_iec(const std::string_view &s) {
+std::expected<uint64_t, Error> parse_uint_iec(std::string_view s) {
   auto o = parse_uint_internal(s);
   if (!o) {
-    return {};
+    return std::unexpected{o.error()};
   }
   auto [res, idx] = *o;
   if (idx == s.size()) {
     return res;
   }
   if (idx + 1 != s.size()) {
-    return {};
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
 
   uint64_t m;
@@ -416,20 +516,20 @@ std::optional<uint64_t> parse_uint_iec(const std::string_view &s) {
     m = 1 << 10;
     break;
   default:
-    return {};
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
 
   if (res > std::numeric_limits<uint64_t>::max() / m) {
-    return {};
+    return std::unexpected{Error::INTEGER_OVERFLOW};
   }
 
   return res * m;
 }
 
-std::optional<uint64_t> parse_duration(const std::string_view &s) {
+std::expected<uint64_t, Error> parse_duration(std::string_view s) {
   auto o = parse_uint_internal(s);
   if (!o) {
-    return {};
+    return std::unexpected{o.error()};
   }
   auto [res, idx] = *o;
   if (idx == s.size()) {
@@ -452,7 +552,7 @@ std::optional<uint64_t> parse_duration(const std::string_view &s) {
       m = NGTCP2_SECONDS;
       break;
     default:
-      return {};
+      return std::unexpected{Error::INVALID_ARGUMENT};
     }
   } else if (idx + 2 == s.size() && (s[idx + 1] == 's' || s[idx + 1] == 'S')) {
     switch (s[idx]) {
@@ -468,14 +568,14 @@ std::optional<uint64_t> parse_duration(const std::string_view &s) {
     case 'n':
       return res;
     default:
-      return {};
+      return std::unexpected{Error::INVALID_ARGUMENT};
     }
   } else {
-    return {};
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
 
   if (res > std::numeric_limits<uint64_t>::max() / m) {
-    return {};
+    return std::unexpected{Error::INTEGER_OVERFLOW};
   }
 
   return res * m;
@@ -518,16 +618,21 @@ template <typename InputIt> InputIt eat_dir(InputIt first, InputIt last) {
 }
 } // namespace
 
-std::string normalize_path(const std::string_view &path) {
-  assert(path.size() <= 1024);
+std::expected<std::string, Error> normalize_path(std::string_view path) {
+  constexpr auto max_path = 1024UZ;
+
+  if (path.size() > max_path) {
+    return std::unexpected{Error::INVALID_ARGUMENT};
+  }
+
   assert(path.size() > 0);
   assert(path[0] == '/');
 
-  std::array<char, 1024> res;
+  std::array<char, max_path> res;
   auto p = res.data();
 
-  auto first = std::begin(path);
-  auto last = std::end(path);
+  auto first = std::ranges::begin(path);
+  auto last = std::ranges::end(path);
 
   *p++ = '/';
   ++first;
@@ -558,12 +663,12 @@ std::string normalize_path(const std::string_view &path) {
     if (*(p - 1) != '/') {
       p = eat_file(res.data(), p);
     }
-    auto slash = std::find(first, last, '/');
+    auto slash = std::ranges::find(first, last, '/');
     if (slash == last) {
-      p = std::copy(first, last, p);
+      p = std::ranges::copy(first, last, p).out;
       break;
     }
-    p = std::copy(first, slash + 1, p);
+    p = std::ranges::copy(first, slash + 1, p).out;
     first = slash + 1;
     for (; first != last && *first == '/'; ++first)
       ;
@@ -571,103 +676,253 @@ std::string normalize_path(const std::string_view &path) {
   return std::string{res.data(), p};
 }
 
-int make_socket_nonblocking(int fd) {
+std::expected<void, Error> make_socket_nonblocking(int fd) {
   int rv;
   int flags;
 
   while ((flags = fcntl(fd, F_GETFL, 0)) == -1 && errno == EINTR)
     ;
   if (flags == -1) {
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   while ((rv = fcntl(fd, F_SETFL, flags | O_NONBLOCK)) == -1 && errno == EINTR)
     ;
 
-  return rv;
+  if (rv == -1) {
+    return std::unexpected{Error::SYSCALL};
+  }
+
+  return {};
 }
 
-int create_nonblock_socket(int domain, int type, int protocol) {
+std::expected<int, Error> create_nonblock_socket(int domain, int type,
+                                                 int protocol) {
 #ifdef SOCK_NONBLOCK
   auto fd = socket(domain, type | SOCK_NONBLOCK, protocol);
   if (fd == -1) {
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
-#else  // !SOCK_NONBLOCK
+#else  // !defined(SOCK_NONBLOCK)
   auto fd = socket(domain, type, protocol);
   if (fd == -1) {
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   make_socket_nonblocking(fd);
-#endif // !SOCK_NONBLOCK
+#endif // !defined(SOCK_NONBLOCK)
 
   return fd;
 }
 
-std::vector<std::string_view> split_str(const std::string_view &s, char delim) {
-  size_t len = 1;
-  auto last = std::end(s);
-  std::string_view::const_iterator d;
-  for (auto first = std::begin(s); (d = std::find(first, last, delim)) != last;
-       ++len, first = d + 1)
-    ;
-
-  auto list = std::vector<std::string_view>(len);
-
-  len = 0;
-  for (auto first = std::begin(s);; ++len) {
-    auto stop = std::find(first, last, delim);
-    // xcode clang does not understand std::string_view{first, stop}.
-    list[len] = std::string_view{first, static_cast<size_t>(stop - first)};
-    if (stop == last) {
-      break;
-    }
-    first = stop + 1;
+std::expected<uint32_t, Error> parse_version(std::string_view s) {
+  if (!util::istarts_with(s, "0x"sv)) {
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
-  return list;
-}
-
-std::optional<uint32_t> parse_version(const std::string_view &s) {
-  auto k = s;
-  if (!util::istarts_with(k, "0x"sv)) {
-    return {};
-  }
-  k = k.substr(2);
+  auto k = s.substr(2);
+  auto k_last = k.data() + k.size();
   uint32_t v;
-  auto rv = std::from_chars(k.data(), k.data() + k.size(), v, 16);
-  if (rv.ptr != k.data() + k.size() || rv.ec != std::errc{}) {
-    return {};
+  auto rv = std::from_chars(k.data(), k_last, v, 16);
+  if (rv.ptr != k_last || rv.ec != std::errc{}) {
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
 
   return v;
 }
 
-std::optional<std::string> read_token(const std::string_view &filename) {
-  return read_pem(filename, "token", "QUIC TOKEN");
+std::expected<std::vector<uint8_t>, Error>
+read_token(const std::filesystem::path &path) {
+  return read_pem(path, "token"sv, "QUIC TOKEN"sv);
 }
 
-int write_token(const std::string_view &filename, const uint8_t *token,
-                size_t tokenlen) {
-  return write_pem(filename, "token", "QUIC TOKEN", token, tokenlen);
+std::expected<void, Error> write_token(const std::filesystem::path &path,
+                                       std::span<const uint8_t> token) {
+  return write_pem(path, "token"sv, "QUIC TOKEN"sv, token);
 }
 
-std::optional<std::string>
-read_transport_params(const std::string_view &filename) {
-  return read_pem(filename, "transport parameters",
-                  "QUIC TRANSPORT PARAMETERS");
+std::expected<std::vector<uint8_t>, Error>
+read_transport_params(const std::filesystem::path &path) {
+  return read_pem(path, "transport parameters"sv,
+                  "QUIC TRANSPORT PARAMETERS"sv);
 }
 
-int write_transport_params(const std::string_view &filename,
-                           const uint8_t *data, size_t datalen) {
-  return write_pem(filename, "transport parameters",
-                   "QUIC TRANSPORT PARAMETERS", data, datalen);
+std::expected<void, Error>
+write_transport_params(const std::filesystem::path &path,
+                       std::span<const uint8_t> data) {
+  return write_pem(path, "transport parameters"sv,
+                   "QUIC TRANSPORT PARAMETERS"sv, data);
+}
+
+std::string percent_decode(std::string_view s) {
+  std::string result;
+
+  result.resize_and_overwrite(s.size(), [s](auto p, auto len) {
+    auto head = p;
+
+    for (auto first = std::ranges::begin(s), last = std::ranges::end(s);
+         first != last; ++first) {
+      if (*first != '%') {
+        *p++ = *first;
+        continue;
+      }
+
+      if (first + 1 != last && first + 2 != last &&
+          is_hex_digit(*(first + 1)) && is_hex_digit(*(first + 2))) {
+        *p++ = static_cast<char>((hex_to_uint(*(first + 1)) << 4) +
+                                 hex_to_uint(*(first + 2)));
+        first += 2;
+        continue;
+      }
+
+      *p++ = *first;
+    }
+
+    return p - head;
+  });
+
+  return result;
+}
+
+std::expected<std::vector<uint8_t>, Error>
+read_file(const std::filesystem::path &path) {
+  auto fd = open(path.c_str(), O_RDONLY);
+  if (fd == -1) {
+    return std::unexpected{Error::IO};
+  }
+
+  auto fd_d = defer([fd] { close(fd); });
+
+  auto size = lseek(fd, 0, SEEK_END);
+  if (size == static_cast<off_t>(-1)) {
+    return std::unexpected{Error::IO};
+  }
+
+  auto addr =
+    mmap(nullptr, static_cast<size_t>(size), PROT_READ, MAP_SHARED, fd, 0);
+  if (addr == MAP_FAILED) {
+    return std::unexpected{Error::IO};
+  }
+
+  auto addr_d =
+    defer([addr, size] { munmap(addr, static_cast<size_t>(size)); });
+
+  auto p = static_cast<uint8_t *>(addr);
+
+  return {{p, p + size}};
+}
+
+size_t clamp_buffer_size(ngtcp2_conn *conn, size_t buflen, size_t gso_burst) {
+  return std::min(gso_burst == 0
+                    ? ngtcp2_conn_get_send_quantum2(conn)
+                    : ngtcp2_conn_get_path_max_tx_udp_payload_size2(conn) *
+                        gso_burst,
+                  buflen);
+}
+
+bool recv_pkt_time_threshold_exceeded(bool time_sensitive, ngtcp2_tstamp start,
+                                      size_t pktcnt) {
+  return time_sensitive && pktcnt &&
+         util::timestamp() - start >= NGTCP2_MILLISECONDS;
+}
+
+std::expected<ECHServerConfig, Error>
+read_ech_server_config(const std::filesystem::path &path) {
+  auto pkey = read_hpke_private_key_pem(path);
+  if (!pkey) {
+    return std::unexpected{pkey.error()};
+  }
+
+  auto maybe_ech_config_list = read_pem(path, "ECH config"sv, "ECHCONFIG"sv);
+  if (!maybe_ech_config_list) {
+    return std::unexpected{maybe_ech_config_list.error()};
+  }
+
+  auto ech_config_list = std::span{*maybe_ech_config_list};
+  if (ech_config_list.size() < 2) {
+    return std::unexpected{Error::INVALID_ARGUMENT};
+  }
+
+  auto data = ech_config_list.subspan(2);
+
+  if (auto len =
+        static_cast<size_t>((ech_config_list[0] << 8) + ech_config_list[1]);
+      len != data.size()) {
+    return std::unexpected{Error::INVALID_ARGUMENT};
+  }
+
+  std::vector<std::vector<uint8_t>> ech_configs;
+
+  for (; !data.empty();) {
+    // version and length, each 2 bytes
+    if (data.size() < 4) {
+      return std::unexpected{Error::INVALID_ARGUMENT};
+    }
+
+    auto version = (data[0] << 8) + data[1];
+
+    auto conflen = static_cast<size_t>(4 + (data[2] << 8) + data[3]);
+    if (data.size() < conflen) {
+      return std::unexpected{Error::INVALID_ARGUMENT};
+    }
+
+    if (version == 0xFE0D) {
+      auto conf = data.first(conflen);
+      ech_configs.emplace_back(std::ranges::begin(conf),
+                               std::ranges::end(conf));
+    } else {
+      std::println(stderr, "Skipping the unsupported ECH version {:#x}",
+                   version);
+    }
+
+    data = data.subspan(conflen);
+  }
+
+  return ECHServerConfig{
+    .private_key = std::move(*pkey),
+    .ech_config_list = std::move(ech_configs),
+  };
+}
+
+std::span<uint64_t, 2> generate_siphash_key() {
+  static auto key = [] {
+    std::array<uint64_t, 2> key;
+
+    if (!generate_secure_random(as_writable_uint8_span(std::span{key}))) {
+      assert(0);
+      abort();
+    }
+
+    return key;
+  }();
+
+  ++key[0];
+
+  return key;
+}
+
+std::filesystem::path realpath(const std::filesystem::path &path) {
+  std::error_code ec;
+
+  auto abspath = std::filesystem::canonical(path, ec);
+  if (ec) {
+    std::println(stderr, "Could not get canonical path for {}: {}",
+                 path.native(), ec.message());
+    abort();
+  }
+
+  return abspath;
+}
+
+std::string format_app_error_code(std::optional<uint64_t> app_error_code) {
+  return app_error_code
+    .transform([](auto &&r) { return std::format("{:#x}", r); })
+    .value_or("(no error)");
 }
 
 } // namespace util
 
 std::ostream &operator<<(std::ostream &os, const ngtcp2_cid &cid) {
-  return os << "0x" << util::format_hex(cid.data, cid.datalen);
+  return os << "0x" << util::format_hex(cid.data, as_signed(cid.datalen));
 }
 
 } // namespace ngtcp2

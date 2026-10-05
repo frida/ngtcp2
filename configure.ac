@@ -22,7 +22,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 AC_PREREQ(2.61)
-AC_INIT([ngtcp2], [1.1.0-DEV], [t-tujikawa@users.sourceforge.net])
+AC_INIT([ngtcp2], [1.26.0-DEV], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -35,27 +35,35 @@ AC_CANONICAL_BUILD
 AC_CANONICAL_HOST
 AC_CANONICAL_TARGET
 
-AM_INIT_AUTOMAKE([subdir-objects])
+AM_INIT_AUTOMAKE([subdir-objects tar-pax])
 
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 # See versioning rule:
 #  https://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 16)
+AC_SUBST(LT_CURRENT, 27)
 AC_SUBST(LT_REVISION, 0)
-AC_SUBST(LT_AGE, 0)
+AC_SUBST(LT_AGE, 11)
 
-AC_SUBST(CRYPTO_QUICTLS_LT_CURRENT, 2)
-AC_SUBST(CRYPTO_QUICTLS_LT_REVISION, 1)
-AC_SUBST(CRYPTO_QUICTLS_LT_AGE, 0)
+AC_SUBST(CRYPTO_QUICTLS_LT_CURRENT, 7)
+AC_SUBST(CRYPTO_QUICTLS_LT_REVISION, 2)
+AC_SUBST(CRYPTO_QUICTLS_LT_AGE, 5)
 
-AC_SUBST(CRYPTO_GNUTLS_LT_CURRENT, 8)
+AC_SUBST(CRYPTO_LIBRESSL_LT_CURRENT, 2)
+AC_SUBST(CRYPTO_LIBRESSL_LT_REVISION, 2)
+AC_SUBST(CRYPTO_LIBRESSL_LT_AGE, 2)
+
+AC_SUBST(CRYPTO_GNUTLS_LT_CURRENT, 12)
 AC_SUBST(CRYPTO_GNUTLS_LT_REVISION, 1)
-AC_SUBST(CRYPTO_GNUTLS_LT_AGE, 0)
+AC_SUBST(CRYPTO_GNUTLS_LT_AGE, 4)
 
-AC_SUBST(CRYPTO_WOLFSSL_LT_CURRENT, 5)
+AC_SUBST(CRYPTO_WOLFSSL_LT_CURRENT, 9)
 AC_SUBST(CRYPTO_WOLFSSL_LT_REVISION, 1)
-AC_SUBST(CRYPTO_WOLFSSL_LT_AGE, 0)
+AC_SUBST(CRYPTO_WOLFSSL_LT_AGE, 4)
+
+AC_SUBST(CRYPTO_OSSL_LT_CURRENT, 3)
+AC_SUBST(CRYPTO_OSSL_LT_REVISION, 1)
+AC_SUBST(CRYPTO_OSSL_LT_AGE, 3)
 
 # from nghttp2
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
@@ -102,15 +110,15 @@ AC_ARG_ENABLE([lib-only],
                     [Build libngtcp2 and libngtcp2_crypto only.])],
     [lib_only=$enableval], [lib_only=no])
 
+AC_ARG_ENABLE([cryptotest],
+    [AS_HELP_STRING([--disable-cryptotest],
+                    [Disable cryptotest under crypto directory])],
+    [cryptotest=$enableval], [cryptotest=yes])
+
 AC_ARG_WITH([jemalloc],
     [AS_HELP_STRING([--with-jemalloc],
                     [Use jemalloc [default=check]])],
     [request_jemalloc=$withval], [request_jemalloc=check])
-
-AC_ARG_WITH([cunit],
-    [AS_HELP_STRING([--with-cunit],
-                    [Use cunit [default=check]])],
-    [request_cunit=$withval], [request_cunit=check])
 
 AC_ARG_WITH([libnghttp3],
     [AS_HELP_STRING([--with-libnghttp3],
@@ -124,7 +132,7 @@ AC_ARG_WITH([libev],
 
 AC_ARG_WITH([openssl],
     [AS_HELP_STRING([--with-openssl],
-                    [Use quictls or openssl [default=check]])],
+                    [Use quictls, libressl or openssl [default=check]])],
     [request_openssl=$withval], [request_openssl=check])
 
 AC_ARG_WITH([gnutls],
@@ -147,8 +155,20 @@ AC_ARG_WITH([wolfssl],
                     [Use wolfSSL [default=no]])],
     [request_wolfssl=$withval], [request_wolfssl=no])
 
+AC_ARG_WITH([libbrotlienc],
+    [AS_HELP_STRING([--with-libbrotlienc],
+                    [Use libbrotlienc [default=no]])],
+    [request_libbrotlienc=$withval], [request_libbrotlienc=no])
+
+AC_ARG_WITH([libbrotlidec],
+    [AS_HELP_STRING([--with-libbrotlidec],
+                    [Use libbrotlidec [default=no]])],
+    [request_libbrotlidec=$withval], [request_libbrotlidec=no])
+
 AC_ARG_VAR([BORINGSSL_CFLAGS], [C compiler flags for BORINGSSL])
 AC_ARG_VAR([BORINGSSL_LIBS], [linker flags for BORINGSSL])
+AC_ARG_VAR([BORINGSSL_STDCXXLIB],
+           [C++ standard library used to build BORINGSSL (e.g., -lstdc++)])
 
 AC_ARG_VAR([PICOTLS_CFLAGS], [C compiler flags for PICOTLS])
 AC_ARG_VAR([PICOTLS_LIBS], [linker flags for PICOTLS])
@@ -177,7 +197,7 @@ AC_PROG_MKDIR_P
 
 PKG_PROG_PKG_CONFIG([0.20])
 
-AX_CXX_COMPILE_STDCXX([20], [], [optional])
+AX_CXX_COMPILE_STDCXX([23], [], [optional])
 
 case "${build}" in
   *-apple-darwin*)
@@ -188,50 +208,17 @@ esac
 
 # Checks for libraries.
 
-# cunit
-have_cunit=no
-if test "x${request_cunit}" != "xno"; then
-  PKG_CHECK_MODULES([CUNIT], [cunit >= 2.1], [have_cunit=yes], [have_cunit=no])
-  # If pkg-config does not find cunit, check it using AC_CHECK_LIB.  We
-  # do this because Debian (Ubuntu) lacks pkg-config file for cunit.
-  if test "x${have_cunit}" = "xno"; then
-    AC_MSG_WARN([${CUNIT_PKG_ERRORS}])
-    AC_CHECK_LIB([cunit], [CU_initialize_registry],
-                 [have_cunit=yes], [have_cunit=no])
-    if test "x${have_cunit}" = "xyes"; then
-      CUNIT_LIBS="-lcunit"
-      CUNIT_CFLAGS=""
-      AC_SUBST([CUNIT_LIBS])
-      AC_SUBST([CUNIT_CFLAGS])
-    fi
-  fi
-  if test "x${have_cunit}" = "xyes"; then
-    # cunit in Mac OS X requires ncurses. Note that in Mac OS X, test
-    # program can be built without -lncurses, but it emits runtime
-    # error.
-    case "${build}" in
-      *-apple-darwin*)
-        CUNIT_LIBS="$CUNIT_LIBS -lncurses"
-        AC_SUBST([CUNIT_LIBS])
-        ;;
-    esac
-  fi
-fi
-
-if test "x${request_cunit}" = "xyes" &&
-   test "x${have_cunit}" != "xyes"; then
-  AC_MSG_ERROR([cunit was requested (--with-cunit) but not found])
-fi
-
-AM_CONDITIONAL([HAVE_CUNIT], [ test "x${have_cunit}" = "xyes" ])
-
 AM_CONDITIONAL([ENABLE_SHARED], [ test "x${enable_shared}" = "xyes" ])
 
-# OpenSSL (required for libngtcp2_crypto_quictls,
-# libngtcp2_crypto_picotls and examples)
+# OpenSSL (required for libngtcp2_crypto_quictls, libngtcp2_crypto_libressl
+# libngtcp2_crypto_picotls, libngtcp2_crypto_ossl and examples)
 have_openssl=no
 have_vanilla_openssl=no
-if test "x${request_openssl}" != "xno"; then
+have_quictls=no
+have_libressl=no
+have_ossl=no
+if test "x${request_openssl}" != "xno" ||
+   test "x${request_picotls}" = "xyes"; then
   PKG_CHECK_MODULES([OPENSSL], [openssl >= 1.1.1],
                     [have_openssl=yes], [have_openssl=no])
   if test "x${have_openssl}" = "xno"; then
@@ -243,34 +230,79 @@ if test "x${request_openssl}" != "xno"; then
 
     AC_SUBST(VANILLA_OPENSSL_LIBS)
     AC_SUBST(VANILLA_OPENSSL_CFLAGS)
+  fi
+fi
 
-    # Until OpenSSL gains mainline support for QUIC, check for a
-    # patched version.
+if test "x${request_openssl}" != "xno" &&
+   test "x${have_openssl}" = "xyes"; then
+  # Until OpenSSL gains mainline support for QUIC, check for a
+  # patched version.
 
+  save_CFLAGS="$CFLAGS"
+  save_LIBS="$LIBS"
+  CFLAGS="$OPENSSL_CFLAGS $CFLAGS"
+  LIBS="$OPENSSL_LIBS $LIBS"
+
+  AC_MSG_CHECKING([for SSL_provide_quic_data])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+    #include <openssl/ssl.h>
+    #if defined(OPENSSL_IS_BORINGSSL) || defined(OPENSSL_IS_AWSLC)
+    #  error This is boringssl.
+    #endif /* OPENSSL_IS_BORINGSSL || OPENSSL_IS_AWSLC */
+  ]], [[
+    SSL_provide_quic_data(NULL, 0, NULL, 0);
+  ]])],
+  [AC_MSG_RESULT([yes]); have_quictls=yes],
+  [AC_MSG_RESULT([no]); have_quictls=no])
+
+  CFLAGS="$save_CFLAGS"
+  LIBS="$save_LIBS"
+
+  if test "x${have_quictls}" = "xno"; then
     save_CFLAGS="$CFLAGS"
     save_LIBS="$LIBS"
     CFLAGS="$OPENSSL_CFLAGS $CFLAGS"
     LIBS="$OPENSSL_LIBS $LIBS"
 
-    AC_MSG_CHECKING([for SSL_is_quic])
+    AC_MSG_CHECKING([for SSL_set_quic_tls_cbs])
     AC_LINK_IFELSE([AC_LANG_PROGRAM([[
       #include <openssl/ssl.h>
     ]], [[
-      SSL *ssl = NULL;
-      SSL_is_quic(ssl);
+      SSL_set_quic_tls_cbs(NULL, NULL, NULL);
     ]])],
-    [AC_MSG_RESULT([yes]); have_openssl_quic=yes],
-    [AC_MSG_RESULT([no]); have_openssl_quic=no])
+    [AC_MSG_RESULT([yes]); have_ossl=yes],
+    [AC_MSG_RESULT([no]); have_ossl=no])
 
     CFLAGS="$save_CFLAGS"
     LIBS="$save_LIBS"
 
-    if test "x${have_openssl_quic}" = "xno"; then
+    if test "x${have_ossl}" = "xno"; then
       AC_MSG_NOTICE([openssl does not have QUIC interface, disabling it])
       have_openssl=no
       OPENSSL_LIBS=
       OPENSSL_CFLAGS=
     fi
+  else
+    save_CFLAGS="$CFLAGS"
+    save_LIBS="$LIBS"
+    CFLAGS="$OPENSSL_CFLAGS $CFLAGS"
+    LIBS="$OPENSSL_LIBS $LIBS"
+
+    AC_MSG_CHECKING([for LIBRESSL_VERSION_NUMBER])
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+      #include <openssl/opensslv.h>
+    ]], [[
+      int dummy = LIBRESSL_VERSION_NUMBER;
+      (void)dummy;
+    ]])],
+    [AC_MSG_RESULT([yes]); have_libressl=yes],
+    [AC_MSG_RESULT([no]); have_libressl=no])
+    if test "x${have_libressl}" = "xyes"; then
+      have_quictls=no
+    fi
+
+    CFLAGS="$save_CFLAGS"
+    LIBS="$save_LIBS"
   fi
 fi
 
@@ -280,6 +312,9 @@ if test "x${request_openssl}" = "xyes" &&
 fi
 
 AM_CONDITIONAL([HAVE_OPENSSL], [ test "x${have_openssl}" = "xyes" ])
+AM_CONDITIONAL([HAVE_QUICTLS], [ test "x${have_quictls}" = "xyes" ])
+AM_CONDITIONAL([HAVE_LIBRESSL], [ test "x${have_libressl}" = "xyes" ])
+AM_CONDITIONAL([HAVE_OSSL], [ test "x${have_ossl}" = "xyes" ])
 
 # GnuTLS (required for libngtcp2_crypto_gnutls)
 have_gnutls=no
@@ -301,9 +336,11 @@ AM_CONDITIONAL([HAVE_GNUTLS], [ test "x${have_gnutls}" = "xyes" ])
 # BoringSSL (required for libngtcp2_crypto_boringssl)
 have_boringssl=no
 if test "x${request_boringssl}" != "xno"; then
-  save_CFLAGS="$CFLAGS"
+  AC_LANG_PUSH(C++)
+
+  save_CXXFLAGS="$CXXFLAGS"
   save_LIBS="$LIBS"
-  CFLAGS="$BORINGSSL_CFLAGS $CFLAGS"
+  CXXFLAGS="$BORINGSSL_CFLAGS $CXXFLAGS"
   LIBS="$BORINGSSL_LIBS $LIBS"
 
   AC_MSG_CHECKING([for SSL_set_quic_early_data_context])
@@ -316,9 +353,18 @@ if test "x${request_boringssl}" != "xno"; then
   [AC_MSG_RESULT([yes]); have_boringssl=yes],
   [AC_MSG_RESULT([no]); have_boringssl=no])
 
-  CFLAGS="$save_CFLAGS"
+  CXXFLAGS="$save_CXXFLAGS"
   LIBS="$save_LIBS"
+
+  AC_LANG_POP()
+
+  if test "x${BORINGSSL_STDCXXLIB}" = "x"; then
+    AC_MSG_NOTICE([BORINGSSL_STDCXXLIB is not defined.  cryptotest will not run for BORINGSSL])
+  fi
 fi
+
+AM_CONDITIONAL([HAVE_BORINGSSL_STDCXXLIB],
+               [ test "x${BORINGSSL_STDCXXLIB}" != "x" ])
 
 if test "x${request_boringssl}" = "xyes" &&
    test "x${have_boringssl}" != "xyes"; then
@@ -363,6 +409,33 @@ if test "x${request_wolfssl}" != "xno"; then
                     [have_wolfssl=yes], [have_wolfssl=no])
   if test "x${have_wolfssl}" = "xno"; then
     AC_MSG_NOTICE($WOLFSSL_PKG_ERRORS)
+  else
+    save_CFLAGS="$CFLAGS"
+    save_LIBS="$LIBS"
+    CFLAGS="$WOLFSSL_CFLAGS $CFLAGS"
+    LIBS="$WOLFSSL_LIBS $LIBS"
+
+    AC_MSG_CHECKING([for wolfSSL_is_quic])
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+      #include <wolfssl/options.h>
+      #include <wolfssl/ssl.h>
+      #include <wolfssl/quic.h>
+    ]], [[
+      WOLFSSL *ssl = NULL;
+      wolfSSL_is_quic(ssl);
+    ]])],
+    [AC_MSG_RESULT([yes]); have_wolfssl_quic=yes],
+    [AC_MSG_RESULT([no]); have_wolfssl_quic=no])
+
+    CFLAGS="$save_CFLAGS"
+    LIBS="$save_LIBS"
+
+    if test "x${have_wolfssl_quic}" = "xno"; then
+      AC_MSG_NOTICE([wolfSSL does not have QUIC interface, disabling it])
+      have_wolfssl=no
+      WOLFSSL_LIBS=
+      WOLFSSL_CFLAGS=
+    fi
   fi
 fi
 
@@ -374,62 +447,116 @@ fi
 AM_CONDITIONAL([HAVE_WOLFSSL], [ test "x${have_wolfssl}" = "xyes" ])
 
 have_crypto=no
-if test "x${have_openssl}" = "xyes" ||
+if test "x${have_quictls}" = "xyes" ||
+   test "x${have_libressl}" = "xyes" ||
    test "x${have_gnutls}" = "xyes" ||
    test "x${have_boringssl}" = "xyes" ||
    test "x${have_picotls}" = "xyes" ||
-   test "x${have_wolfssl}" = "xyes"; then
+   test "x${have_wolfssl}" = "xyes" ||
+   test "x${have_ossl}" = "xyes"; then
   have_crypto=yes
 fi
 
 AM_CONDITIONAL([HAVE_CRYPTO], [ test "x${have_crypto}" = "xyes" ])
+AM_CONDITIONAL([HAVE_CRYPTOTEST], [ test "x${cryptotest}" = "xyes" ])
 
 # libnghttp3 (required for examples)
 have_libnghttp3=no
-if test "x${request_libnghttp3}" != "xno"; then
-  PKG_CHECK_MODULES([LIBNGHTTP3], [libnghttp3 >= 1.0.0],
-                    [have_libnghttp3=yes], [have_libnghttp3=no])
-  if test "${have_libnghttp3}" = "xno"; then
-    AC_MSG_NOTICE($LIBNGHTTP3_PKG_ERRORS)
+if test "x${lib_only}" = "xno"; then
+  if test "x${request_libnghttp3}" != "xno"; then
+    PKG_CHECK_MODULES([LIBNGHTTP3], [libnghttp3 >= 1.18.0],
+                      [have_libnghttp3=yes], [have_libnghttp3=no])
+    if test "${have_libnghttp3}" = "xno"; then
+      AC_MSG_NOTICE($LIBNGHTTP3_PKG_ERRORS)
+    fi
   fi
-fi
 
-if test "x${request_libnghttp3}" = "xyes" &&
-   test "x${have_libnghttp3}" != "xyes"; then
-  AC_MSG_ERROR([libnghttp3 was requested (--with-libnghttp3) but not found])
+  if test "x${request_libnghttp3}" = "xyes" &&
+     test "x${have_libnghttp3}" != "xyes"; then
+    AC_MSG_ERROR([libnghttp3 was requested (--with-libnghttp3) but not found])
+  fi
 fi
 
 AM_CONDITIONAL([HAVE_NGHTTP3], [ test "x${have_libnghttp3}" = "xyes" ])
 
 # libev (required for examples)
 have_libev=no
-if test "x${request_libev}" != "xno"; then
-  if test "x${LIBEV_LIBS}" = "x" && test "x${LIBEV_CFLAGS}" = "x"; then
-    # libev does not have pkg-config file.  Check it in an old way.
-    save_LIBS=$LIBS
-    # android requires -lm for floor
-    AC_CHECK_LIB([ev], [ev_time], [have_libev=yes], [have_libev=no], [-lm])
-    if test "x${have_libev}" = "xyes"; then
-      AC_CHECK_HEADER([ev.h], [have_libev=yes], [have_libev=no])
+if test "x${lib_only}" = "xno"; then
+  if test "x${request_libev}" != "xno"; then
+    if test "x${LIBEV_LIBS}" = "x" && test "x${LIBEV_CFLAGS}" = "x"; then
+      # libev does not have pkg-config file.  Check it in an old way.
+      save_LIBS=$LIBS
+      # android requires -lm for floor
+      AC_CHECK_LIB([ev], [ev_time], [have_libev=yes], [have_libev=no], [-lm])
       if test "x${have_libev}" = "xyes"; then
-        LIBEV_LIBS=-lev
-        LIBEV_CFLAGS=
+        AC_CHECK_HEADER([ev.h], [have_libev=yes], [have_libev=no])
+        if test "x${have_libev}" = "xyes"; then
+          LIBEV_LIBS=-lev
+          LIBEV_CFLAGS=
+        fi
       fi
+      LIBS=$save_LIBS
+    else
+      have_libev=yes
     fi
-    LIBS=$save_LIBS
-  else
-    have_libev=yes
+  fi
+
+  if test "x${request_libev}" = "xyes" &&
+     test "x${have_libev}" != "xyes"; then
+    AC_MSG_ERROR([libev was requested (--with-libev) but not found])
   fi
 fi
 
-if test "x${request_libev}" = "xyes" &&
-   test "x${have_libev}" != "xyes"; then
-  AC_MSG_ERROR([libev was requested (--with-libev) but not found])
+# libbrotlienc (for examples)
+have_libbrotlienc=no
+if test "x${lib_only}" = "xno"; then
+  if test "x${request_libbrotlienc}" != "xno"; then
+    PKG_CHECK_MODULES([LIBBROTLIENC], [libbrotlienc >= 1.0.9],
+                      [have_libbrotlienc=yes],
+                      [have_libbrotlienc=no])
+    if test "x${have_libbrotlienc}" = "xno"; then
+      AC_MSG_NOTICE($LIBBROTLIENC_PKG_ERRORS)
+    fi
+  fi
+
+  if test "x${request_libbrotlienc}" = "xyes" &&
+     test "x${have_libbrotlienc}" != "xyes"; then
+    AC_MSG_ERROR([libbrotlienc was requested (--with-libbrotlienc) but not found])
+  fi
+fi
+
+# libbrotlidec (for examples)
+have_libbrotlidec=no
+if test "x${lib_only}" = "xno"; then
+  if test "x${request_libbrotlidec}" != "xno"; then
+    PKG_CHECK_MODULES([LIBBROTLIDEC], [libbrotlidec >= 1.0.9],
+                      [have_libbrotlidec=yes],
+                      [have_libbrotlidec=no])
+    if test "x${have_libbrotlidec}" = "xno"; then
+      AC_MSG_NOTICE($LIBBROTLIDEC_PKG_ERRORS)
+    fi
+  fi
+
+  if test "x${request_libbrotlidec}" = "xyes" &&
+     test "x${have_libbrotlidec}" != "xyes"; then
+    AC_MSG_ERROR([libbrotlidec was requested (--with-libbrotlidec) but not found])
+  fi
+fi
+
+have_libbrotli=no
+if test "x${lib_only}" = "xno"; then
+  if test "x${have_libbrotlienc}" = "xyes" &&
+     test "x${have_libbrotlidec}" = "xyes"; then
+    have_libbrotli=yes
+
+    AC_DEFINE([HAVE_LIBBROTLI], [1],
+              [Define to 1 if you have `libbrotlienc` and `libbrotlidec` libraries.])
+  fi
 fi
 
 if test "x${lib_only}" = "xno" &&
-   test "x${HAVE_CXX20}" != "x1"; then
-  AC_MSG_WARN([C++ compiler is not capable of C++20.  Examples will not be built.])
+   test "x${HAVE_CXX23}" != "x1"; then
+  AC_MSG_WARN([C++ compiler is not capable of C++23.  Examples will not be built.])
 fi
 
 enable_examples=no
@@ -437,83 +564,64 @@ if test "x${lib_only}" = "xno" &&
    test "x${have_libnghttp3}" = "xyes" &&
    test "x${have_crypto}" = "xyes" &&
    test "x${have_libev}" = "xyes" &&
-   test "x${HAVE_CXX20}" = "x1"; then
+   test "x${HAVE_CXX23}" = "x1"; then
   enable_examples=yes
-
-  if test "x${have_openssl}" = "xyes"; then
-    AC_DEFINE([ENABLE_EXAMPLE_QUICTLS], [1],
-              [Define to 1 in order to build examples/{qtlsclient,qtlsserver}])
-  fi
-
-  if test "x${have_gnutls}" = "xyes"; then
-    AC_DEFINE([ENABLE_EXAMPLE_GNUTLS], [1],
-              [Define to 1 in order to build examples/{gtlsclient,gtlsserver}])
-  fi
-
-  if test "x${have_boringssl}" = "xyes"; then
-    AC_DEFINE([ENABLE_EXAMPLE_BORINGSSL], [1],
-              [Define to 1 in order to build examples/{bsslclient,bsslserver}])
-  fi
-
-  if test "x${have_picotls}" = "xyes"; then
-    AC_DEFINE([ENABLE_EXAMPLE_PICOTLS], [1],
-              [Define to 1 in order to build examples/{ptlsclient,ptlsserver}])
-  fi
-
-  if test "x${have_wolfssl}" = "xyes"; then
-    AC_DEFINE([ENABLE_EXAMPLE_WOLFSSL], [1],
-              [Define to 1 in order to build examples/{wsslclient,wsslserver}])
-  fi
 fi
 
 AM_CONDITIONAL([ENABLE_EXAMPLES], [ test "x${enable_examples}" = "xyes" ])
-AM_CONDITIONAL([ENABLE_EXAMPLE_QUICTLS], [ test "x${enable_examples}" = "xyes" && test "x${have_openssl}" = "xyes" ])
+AM_CONDITIONAL([ENABLE_EXAMPLE_QUICTLS], [ test "x${enable_examples}" = "xyes" && (test "x${have_quictls}" = "xyes" || test "x${have_libressl}" = "xyes") ])
+AM_CONDITIONAL([ENABLE_EXAMPLE_LIBRESSL], [ test "x${enable_examples}" = "xyes" && test "x${have_libressl}" = "xyes" ])
 AM_CONDITIONAL([ENABLE_EXAMPLE_GNUTLS], [ test "x${enable_examples}" = "xyes" && test "x${have_gnutls}" = "xyes" ])
 AM_CONDITIONAL([ENABLE_EXAMPLE_BORINGSSL], [ test "x${enable_examples}" = "xyes" && test "x${have_boringssl}" = "xyes" ])
 AM_CONDITIONAL([ENABLE_EXAMPLE_PICOTLS], [ test "x${enable_examples}" = "xyes" && test "x${have_picotls}" = "xyes" ])
 AM_CONDITIONAL([ENABLE_EXAMPLE_WOLFSSL], [ test "x${enable_examples}" = "xyes" && test "x${have_wolfssl}" = "xyes" ])
+AM_CONDITIONAL([ENABLE_EXAMPLE_OSSL], [ test "x${enable_examples}" = "xyes" && test "x${have_ossl}" = "xyes" ])
 
 AC_SUBST([EXAMPLES_ENABLED], "${enable_examples}")
-AC_SUBST([EXAMPLES_QUICTLS], "${have_openssl}")
+AC_SUBST([EXAMPLES_QUICTLS], "${have_quictls}")
+AC_SUBST([EXAMPLES_LIBRESSL], "${have_libressl}")
 AC_SUBST([EXAMPLES_GNUTLS], "${have_gnutls}")
 AC_SUBST([EXAMPLES_BORINGSSL], "${have_boringssl}")
 AC_SUBST([EXAMPLES_PICOTLS], "${have_picotls}")
 AC_SUBST([EXAMPLES_WOLFSSL], "${have_wolfssl}")
+AC_SUBST([EXAMPLES_OSSL], "${have_ossl}")
 
 # jemalloc
 have_jemalloc=no
-if test "x${request_jemalloc}" != "xno"; then
-  if test "x${JEMALLOC_LIBS}" = "x" && test "x${JEMALLOC_CFLAGS}" = "x"; then
-    save_LIBS=$LIBS
-    AC_SEARCH_LIBS([malloc_stats_print], [jemalloc], [have_jemalloc=yes], [],
-                   [$PTHREAD_LDFLAGS])
-
-    if test "x${have_jemalloc}" = "xyes"; then
-      jemalloc_libs=${ac_cv_search_malloc_stats_print}
-    else
-      # On Darwin, malloc_stats_print is je_malloc_stats_print
-      AC_SEARCH_LIBS([je_malloc_stats_print], [jemalloc], [have_jemalloc=yes],
-                     [], [$PTHREAD_LDFLAGS])
+if test "x${lib_only}" = "xno"; then
+  if test "x${request_jemalloc}" != "xno"; then
+    if test "x${JEMALLOC_LIBS}" = "x" && test "x${JEMALLOC_CFLAGS}" = "x"; then
+      save_LIBS=$LIBS
+      AC_SEARCH_LIBS([malloc_stats_print], [jemalloc], [have_jemalloc=yes], [],
+                     [$PTHREAD_LDFLAGS])
 
       if test "x${have_jemalloc}" = "xyes"; then
-        jemalloc_libs=${ac_cv_search_je_malloc_stats_print}
+        jemalloc_libs=${ac_cv_search_malloc_stats_print}
+      else
+        # On Darwin, malloc_stats_print is je_malloc_stats_print
+        AC_SEARCH_LIBS([je_malloc_stats_print], [jemalloc], [have_jemalloc=yes],
+                       [], [$PTHREAD_LDFLAGS])
+
+        if test "x${have_jemalloc}" = "xyes"; then
+          jemalloc_libs=${ac_cv_search_je_malloc_stats_print}
+        fi
       fi
-    fi
 
-    LIBS=$save_LIBS
+      LIBS=$save_LIBS
 
-    if test "x${have_jemalloc}" = "xyes" &&
-       test "x${jemalloc_libs}" != "xnone required"; then
-      JEMALLOC_LIBS=${jemalloc_libs}
+      if test "x${have_jemalloc}" = "xyes" &&
+         test "x${jemalloc_libs}" != "xnone required"; then
+        JEMALLOC_LIBS=${jemalloc_libs}
+      fi
+    else
+      have_jemalloc=yes
     fi
-  else
-    have_jemalloc=yes
   fi
-fi
 
-if test "x${request_jemalloc}" = "xyes" &&
-   test "x${have_jemalloc}" != "xyes"; then
-  AC_MSG_ERROR([jemalloc was requested (--with-jemalloc) but not found])
+  if test "x${request_jemalloc}" = "xyes" &&
+     test "x${have_jemalloc}" != "xyes"; then
+    AC_MSG_ERROR([jemalloc was requested (--with-jemalloc) but not found])
+  fi
 fi
 
 # Checks for header files.
@@ -558,6 +666,8 @@ AC_SYS_LARGEFILE
 AC_CHECK_FUNCS([ \
   memmove \
   memset \
+  explicit_bzero \
+  memset_s \
 ])
 
 # Checks for symbols.
@@ -629,6 +739,7 @@ if test "x$werror" != "xno"; then
     # Only work with Clang for the moment
     AX_CHECK_COMPILE_FLAG([-Wheader-guard], [CFLAGS="$CFLAGS -Wheader-guard"])
     AX_CHECK_COMPILE_FLAG([-Wsometimes-uninitialized], [CFLAGS="$CFLAGS -Wsometimes-uninitialized"])
+    AX_CHECK_COMPILE_FLAG([-Wextra-semi], [CFLAGS="$CFLAGS -Wextra-semi"])
 
     # Only work with gcc7 for the moment
     AX_CHECK_COMPILE_FLAG([-Wduplicated-branches], [CFLAGS="$CFLAGS -Wduplicated-branches"])
@@ -637,15 +748,22 @@ if test "x$werror" != "xno"; then
     AX_CHECK_COMPILE_FLAG([-Wno-format-nonliteral], [CFLAGS="$CFLAGS -Wno-format-nonliteral"])
 
     # For C++ compiler
-    AC_LANG_PUSH(C++)
-    AX_CHECK_COMPILE_FLAG([-Wall], [CXXFLAGS="$CXXFLAGS -Wall"])
-    AX_CHECK_COMPILE_FLAG([-Werror], [CXXFLAGS="$CXXFLAGS -Werror"])
-    AX_CHECK_COMPILE_FLAG([-Wformat-security], [CXXFLAGS="$CXXFLAGS -Wformat-security"])
-    AX_CHECK_COMPILE_FLAG([-Wsometimes-uninitialized], [CXXFLAGS="$CXXFLAGS -Wsometimes-uninitialized"])
-    # Disable noexcept-type warning of g++-7.  This is not harmful as
-    # long as all source files are compiled with the same compiler.
-    AX_CHECK_COMPILE_FLAG([-Wno-noexcept-type], [CXXFLAGS="$CXXFLAGS -Wno-noexcept-type"])
-    AC_LANG_POP()
+    if test "x${lib_only}" = "xno"; then
+      AC_LANG_PUSH(C++)
+      AX_CHECK_COMPILE_FLAG([-Wall], [CXXFLAGS="$CXXFLAGS -Wall"])
+      AX_CHECK_COMPILE_FLAG([-Werror], [CXXFLAGS="$CXXFLAGS -Werror"])
+      AX_CHECK_COMPILE_FLAG([-Wformat-security], [CXXFLAGS="$CXXFLAGS -Wformat-security"])
+      AX_CHECK_COMPILE_FLAG([-Wsometimes-uninitialized], [CXXFLAGS="$CXXFLAGS -Wsometimes-uninitialized"])
+      AX_CHECK_COMPILE_FLAG([-Wextra-semi], [CXXFLAGS="$CXXFLAGS -Wextra-semi"])
+      AX_CHECK_COMPILE_FLAG([-Wconversion], [CXXFLAGS="$CXXFLAGS -Wconversion"])
+      # Disable noexcept-type warning of g++-7.  This is not harmful
+      # as long as all source files are compiled with the same
+      # compiler.
+      AX_CHECK_COMPILE_FLAG([-Wno-noexcept-type], [CXXFLAGS="$CXXFLAGS -Wno-noexcept-type"])
+      # clang++-18 warns this when building with wolfSSL >= v5.7.6-stable.
+      AX_CHECK_COMPILE_FLAG([-Wno-extern-c-compat], [CXXFLAGS="$CXXFLAGS -Wno-extern-c-compat"])
+      AC_LANG_POP()
+    fi
 fi
 
 WARNCFLAGS=$CFLAGS
@@ -690,6 +808,7 @@ AC_CONFIG_FILES([
   tests/Makefile
   crypto/Makefile
   crypto/quictls/Makefile
+  crypto/quictls/libngtcp2_crypto_libressl.pc
   crypto/quictls/libngtcp2_crypto_quictls.pc
   crypto/includes/Makefile
   crypto/gnutls/Makefile
@@ -700,6 +819,8 @@ AC_CONFIG_FILES([
   crypto/picotls/libngtcp2_crypto_picotls.pc
   crypto/wolfssl/Makefile
   crypto/wolfssl/libngtcp2_crypto_wolfssl.pc
+  crypto/ossl/Makefile
+  crypto/ossl/libngtcp2_crypto_ossl.pc
   doc/Makefile
   doc/source/conf.py
   third-party/Makefile
@@ -735,13 +856,14 @@ AC_MSG_NOTICE([summary of build options:
     Libtool:
       LIBTOOL_LDFLAGS: ${LIBTOOL_LDFLAGS}
     Crypto helper libraries:
-      libngtcp2_crypto_quictls:   ${have_openssl}
+      libngtcp2_crypto_quictls:   ${have_quictls}
+      libngtcp2_crypto_libressl:  ${have_libressl}
       libngtcp2_crypto_gnutls:    ${have_gnutls}
       libngtcp2_crypto_boringssl: ${have_boringssl}
       libngtcp2_crypto_picotls:   ${have_picotls}
       libngtcp2_crypto_wolfssl:   ${have_wolfssl}
-    Test:
-      CUnit:          ${have_cunit} (CFLAGS='${CUNIT_CFLAGS}' LIBS='${CUNIT_LIBS}')
+      libngtcp2_crypto_ossl:      ${have_ossl}
+    Cryptotest:       ${cryptotest}
     Debug:
       Debug:          ${debug} (CFLAGS='${DEBUGCFLAGS}')
     Libs:
@@ -753,5 +875,7 @@ AC_MSG_NOTICE([summary of build options:
       BoringSSL:      ${have_boringssl} (CFLAGS='${BORINGSSL_CFLAGS}' LIBS='${BORINGSSL_LIBS}')
       Picotls:        ${have_picotls} (CFLAGS='${PICOTLS_CFLAGS}' LIBS='${PICOTLS_LIBS}')
       wolfSSL:        ${have_wolfssl} (CFLAGS='${WOLFSSL_CFLAGS}' LIBS='${WOLFSSL_LIBS}')
+      Libbrotlienc:   ${have_libbrotlienc} (CFLAGS='${LIBBROTLIENC_CFLAGS}' LIBS='${LIBBROTLIENC_LIBS}')
+      Libbrotlidec:   ${have_libbrotlidec} (CFLAGS='${LIBBROTLIDEC_CFLAGS}' LIBS='${LIBBROTLIDEC_LIBS}')
     Examples:         ${enable_examples}
 ])

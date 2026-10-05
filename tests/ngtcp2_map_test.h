@@ -28,11 +28,19 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
-void test_ngtcp2_map(void);
-void test_ngtcp2_map_functional(void);
-void test_ngtcp2_map_each_free(void);
-void test_ngtcp2_map_clear(void);
+#define MUNIT_ENABLE_ASSERT_ALIASES
 
-#endif /* NGTCP2_MAP_TEST_H */
+#include "munit.h"
+
+extern const MunitSuite map_suite;
+
+munit_void_test_decl(test_ngtcp2_map)
+munit_void_test_decl(test_ngtcp2_map_functional)
+munit_void_test_decl(test_ngtcp2_map_each)
+munit_void_test_decl(test_ngtcp2_map_clear)
+munit_void_test_decl(test_ngtcp2_map_free)
+munit_void_test_decl(test_ngtcp2_map_remove)
+
+#endif /* !defined(NGTCP2_MAP_TEST_H) */

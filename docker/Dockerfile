@@ -1,39 +1,71 @@
-FROM debian:12 as build
+FROM debian:13 AS build
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        git g++ clang-14 make binutils autoconf automake autotools-dev libtool \
-        pkg-config libev-dev libjemalloc-dev \
-        ca-certificates mime-support && \
-    git clone --depth 1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl && \
-    cd openssl && ./config --openssldir=/etc/ssl && make -j$(nproc) && make install_sw && cd .. && rm -rf openssl && \
-    git clone --depth 1 https://github.com/ngtcp2/nghttp3 && \
-    cd nghttp3 && autoreconf -i && \
-    ./configure --enable-lib-only CC=clang-14 CXX=clang++-14 && \
-    make -j$(nproc) && make install-strip && cd .. && rm -rf nghttp3 && \
-    git clone --depth 1 https://github.com/ngtcp2/ngtcp2 && \
-    cd ngtcp2 && autoreconf -i && \
-    ./configure \
-        CC=clang-14 \
-        CXX=clang++-14 \
-        LIBTOOL_LDFLAGS="-static-libtool-libs" \
-        OPENSSL_LIBS="-l:libssl.a -l:libcrypto.a -ldl -pthread" \
-        LIBEV_LIBS="-l:libev.a" \
-        JEMALLOC_LIBS="-l:libjemalloc.a -lm" && \
-    make -j$(nproc) && \
-    strip examples/qtlsclient examples/qtlsserver && \
-    cp examples/qtlsclient examples/qtlsserver /usr/local/bin && \
-    cd .. && rm -rf ngtcp2 && \
-    apt-get -y purge \
-        git g++ clang-14 make binutils autoconf automake autotools-dev libtool \
-        pkg-config libev-dev libjemalloc-dev \
-        ca-certificates && \
-    apt-get -y autoremove --purge && \
-    rm -rf /var/log/*
+ARG NGTCP2_BRANCH=main
 
-FROM gcr.io/distroless/cc-debian12
+RUN <<EOF
+set -e
 
-COPY --from=build /usr/local/bin/qtlsclient /usr/local/bin/qtlsserver /usr/local/bin/
-COPY --from=build /etc/mime.types /etc/
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git clang-19 make binutils autoconf automake autotools-dev libtool \
+    pkg-config libev-dev libjemalloc-dev cmake cmake-data \
+    ca-certificates media-types
 
-CMD ["/usr/local/bin/qtlsclient"]
+git clone --depth 1 -b v5.4.0 https://github.com/aws/aws-lc
+cd aws-lc
+cmake -Bbuild -DDISABLE_GO=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang-19 \
+    -DCMAKE_CXX_COMPILER=clang++-19
+make -j$(nproc) -C build
+cmake --install build
+cd ..
+rm -rf aws-lc
+
+git clone --recursive --shallow-submodules --depth 1 \
+    https://github.com/ngtcp2/nghttp3
+cd nghttp3
+autoreconf -i
+./configure --disable-dependency-tracking --enable-lib-only \
+    CC=clang-19 CXX=clang++-19
+make -j$(nproc)
+make install-strip
+cd ..
+rm -rf nghttp3
+
+git clone --recursive --shallow-submodules --depth 1 -b $NGTCP2_BRANCH \
+    https://github.com/ngtcp2/ngtcp2
+cd ngtcp2
+autoreconf -i
+./configure \
+    CC=clang-19 \
+    CXX=clang++-19 \
+    LDFLAGS="-static-libgcc -static-libstdc++" \
+    LIBTOOL_LDFLAGS="-static-libtool-libs" \
+    LIBEV_LIBS="-l:libev.a" \
+    BORINGSSL_LIBS="-lssl -lcrypto" \
+    BORINGSSL_CFLAGS="-I/usr/local/include" \
+    JEMALLOC_LIBS="-l:libjemalloc.a -lm" \
+    --disable-dependency-tracking \
+    --with-boringssl
+make -j$(nproc)
+strip examples/bsslclient examples/bsslserver
+cp examples/bsslclient examples/bsslserver /usr/local/bin
+cd ..
+rm -rf ngtcp2
+
+apt-get -y purge \
+    git clang-19 make binutils autoconf automake autotools-dev libtool \
+    pkg-config libev-dev libjemalloc-dev \
+    ca-certificates
+apt-get -y autoremove --purge
+rm -rf /var/log/*
+EOF
+
+FROM gcr.io/distroless/base-nossl-debian13
+
+COPY --from=build --link /usr/local/bin/bsslclient /usr/local/bin/bsslserver \
+    /usr/local/bin/
+COPY --from=build --link /etc/mime.types /etc/
+
+CMD ["/usr/local/bin/bsslclient"]

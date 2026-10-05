@@ -33,14 +33,16 @@
 
 using namespace ngtcp2;
 
-TLSSessionBase::TLSSessionBase() : session_{nullptr} {}
-
 TLSSessionBase::~TLSSessionBase() { gnutls_deinit(session_); }
 
 gnutls_session_t TLSSessionBase::get_native_handle() const { return session_; }
 
 std::string TLSSessionBase::get_cipher_name() const {
   return gnutls_cipher_get_name(gnutls_cipher_get(session_));
+}
+
+std::string_view TLSSessionBase::get_negotiated_group() const {
+  return gnutls_group_get_name(gnutls_group_get(session_));
 }
 
 std::string TLSSessionBase::get_selected_alpn() const {
@@ -58,7 +60,7 @@ extern std::ofstream keylog_file;
 namespace {
 int keylog_callback(gnutls_session_t session, const char *label,
                     const gnutls_datum_t *secret) {
-  keylog_file.write(label, strlen(label));
+  keylog_file.write(label, static_cast<std::streamsize>(strlen(label)));
   keylog_file.put(' ');
 
   gnutls_datum_t crandom;
@@ -69,12 +71,10 @@ int keylog_callback(gnutls_session_t session, const char *label,
     return -1;
   }
 
-  auto crandom_hex =
-      util::format_hex(reinterpret_cast<unsigned char *>(crandom.data), 32);
+  auto crandom_hex = util::format_hex(crandom.data, crandom.size);
   keylog_file << crandom_hex << " ";
 
-  auto secret_hex = util::format_hex(
-      reinterpret_cast<unsigned char *>(secret->data), secret->size);
+  auto secret_hex = util::format_hex(secret->data, secret->size);
   keylog_file << secret_hex << " ";
 
   keylog_file.put('\n');
